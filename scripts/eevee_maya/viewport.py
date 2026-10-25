@@ -269,16 +269,31 @@ class Override(render.MRenderOverride):
 
 def register():
     global _override
-    if _override is None:
-        _override = Override()
-        render.MRenderer.registerOverride(_override)
+    existing = render.MRenderer.findRenderOverride(NAME)
+    if _override is not None and existing is not None:
+        return _override
+    if existing is not None:
+        raise RuntimeError("Eevee ya tiene un viewport registrado por otra instancia. Reinicia Maya para cargar una sola versión del puente.")
+    candidate = _override if _override is not None else Override()
+    try:
+        render.MRenderer.registerOverride(candidate)
+    except RuntimeError as exc:
+        raise RuntimeError("No se pudo registrar el viewport Eevee en Viewport 2.0. Comprueba Preferences > Display > Rendering engine (OpenGL Core Profile) y reinicia Maya. Detalle: " + str(exc)) from exc
+    _override = candidate
     return _override
 
 
 def deregister():
     global _override
-    if _override:
-        render.MRenderer.deregisterOverride(_override)
-        _override.quad.release()
-        _override.gpu_image.release()
-        _override = None
+    if _override is not None:
+        # Maya can already have removed the override after a failed load or
+        # during shutdown; deregistering a missing override raises kFailure.
+        if render.MRenderer.findRenderOverride(NAME) is not None:
+            render.MRenderer.deregisterOverride(_override)
+        try:
+            _override.quad.release()
+        finally:
+            try:
+                _override.gpu_image.release()
+            finally:
+                _override = None

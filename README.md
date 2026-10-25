@@ -14,6 +14,10 @@ Maya debe utilizar OpenGL/OpenGL Core Profile. Si usa DirectX 11, cambia el moto
 
 El instalador se entrega sin firma de código. Blender conserva sus avisos originales; consulta [componentes externos](THIRD_PARTY_NOTICES.md).
 
+Si la versión 0.6.2 muestra `Unexpected Internal Failure` al descargar/cargar el plug-in, cierra Maya después de guardar tu trabajo, instala 0.6.3 o posterior y vuelve a iniciarlo. Se corrigió la limpieza de comandos tras fallos de Viewport 2.0 y se separó la carga del plug-in del registro gráfico en Maya. No es necesario borrar las preferencias de Maya.
+
+Los errores detallados se guardan en `%LOCALAPPDATA%\EeveeMayaBridge\diagnostics\plugin_load.json`. Para obtener información de GPU y versión de Maya, arrastra `DIAGNOSTICO_EN_MAYA.py` desde la carpeta de la versión instalada a un viewport. Guarda `installation_report.json` en esa misma carpeta de diagnóstico; no abre ni guarda escenas.
+
 ## Actualizar
 
 Maya consulta GitHub en segundo plano al cargar el menú Eevee. Si hay un release posterior, el menú muestra **Nueva versión X disponible…**. También puedes pulsar **Buscar actualizaciones…**.
