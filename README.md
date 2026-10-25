@@ -31,6 +31,7 @@ Para desinstalar, cierra Maya y Blender y usa **Aplicaciones instaladas de Windo
 ## Funciones
 
 - Mallas evaluadas de Maya, cambios de puntos, normales, matrices y visibilidad. Maya ejecuta skinClusters, blendShapes, rigs y pesos pintados.
+- Sincronización de rutas al renombrar mallas, grupos o materiales y al cambiar la jerarquía. Espera y recuperación cuando Maya reconstruye la vista de un panel.
 - Traducción parcial de standardSurface/aiStandardSurface y Lambert/Blinn/Phong, mapas file directos, UDIM y normales/bump directos. Ambient Color e Incandescence de materiales clásicos.
 - Luces Point, Spot, Directional y Area; intensidad, exposición, cono, penumbra, sombras y participación volumétrica por luz.
 - Light linking por objeto y vínculos de sombras desde las relaciones de Maya; editor nativo accesible desde Ajustes > Luz.
@@ -57,6 +58,8 @@ Para probar el código de la carpeta sin instalar una distribución, ejecuta `in
 python -m unittest discover -s tests/distribution -v
 python tools/build_release.py
 ```
+
+Con `mayapy` también puedes ejecutar `tests/distribution/probe_scene_changes.py`: crea una escena temporal de prueba y verifica cambios de nombres, jerarquía y avisos durante reproducción, sin acceder a otra sesión de Maya.
 
 Los artefactos quedan en `dist/`. Para publicar una nueva actualización:
 

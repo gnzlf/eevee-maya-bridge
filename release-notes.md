@@ -1,13 +1,13 @@
-Corrección de carga/descarga del plug-in cuando Maya devuelve `Unexpected Internal Failure` en Viewport 2.0.
+Mejoras de estabilidad al cerrar paneles, renombrar objetos y actualizar el viewport.
 
-- La descarga del plug-in siempre intenta retirar su comando, aunque falle la limpieza gráfica. Evita que `eeveeViewport` quede registrado y bloquee la carga siguiente.
-- Un registro gráfico fallido no conserva una instancia inválida; la descarga comprueba si Maya ya retiró el viewport.
-- El registro del viewport se intenta en el siguiente ciclo de reposo de Maya, después de instalar el menú. Un fallo gráfico ya no aborta la carga del plug-in.
-- Diagnóstico completo en `%LOCALAPPDATA%\EeveeMayaBridge\diagnostics\plugin_load.json`, independiente de los permisos de la carpeta del plug-in.
-- Se incluye `DIAGNOSTICO_EN_MAYA.py` para recopilar GPU, versión de Maya y errores de carga sin abrir ni guardar escenas.
+- El puente espera cuando Maya conserva un panel pero su vista gráfica todavía no existe, en lugar de detenerse con `Object does not exist`. Reanuda el envío cuando la vista vuelve y reduce la frecuencia del temporizador mientras espera.
+- Al activar Eevee, se eligen paneles que realmente tienen una vista disponible.
+- Renombrar una malla, un grupo antecesor o un material, y cambiar de padre, invalida las rutas exportadas. El puente reconstruye sus referencias para evitar nombres antiguos y fallos en light linking. Los avisos de cambio de identidad permanecen activos durante la reproducción.
+- Las solicitudes de otra imagen por cambios de calidad o ajustes ya no recorren todas las mallas si su geometría no está sucia. Los cambios reales de deformadores y animación conservan su actualización.
+- Conserva las correcciones de carga/descarga y diagnóstico introducidas en 0.6.3.
 
-Si 0.6.2 ya falló en esa sesión, guarda tu trabajo y cierra Maya. Instala esta versión y vuelve a iniciar Maya para retirar el comando residual de la sesión anterior. Mantén OpenGL/OpenGL Core Profile como motor del viewport.
+Instala esta versión y reinicia Maya al terminar de trabajar. Mantén OpenGL/OpenGL Core Profile como motor del viewport.
 
-Validación: 24 pruebas automáticas, instalación del EXE en un perfil separado, carga de las DLL y tres ciclos de carga/descarga del plug-in empaquetado con Maya 2024.2 en modo standalone. El Acer Nitro 5/RTX 3060 aún requiere verificación en el equipo del usuario.
+Validación: 24 pruebas de distribución; instalación del EXE y ocho comprobaciones del paquete en Maya 2024.2 standalone; cambios de nombres y jerarquía con Maya API y con imágenes reales de Eevee; recuperación de vista y evaluación de geometría; deformadores, skin y blendShapes; pruebas visuales de luces, selección, sombras, light linking, AO, DOF, volumen y salida a 1920. Las pruebas de GPU se ejecutaron con RTX 3070; el Acer Nitro 5/RTX 3060 aún requiere verificación en el equipo del usuario.
 
 El viewport continúa siendo experimental. Requiere Maya 2024 instalado; no garantiza 30 FPS ni paridad completa con Arnold. El instalador no tiene firma de código.

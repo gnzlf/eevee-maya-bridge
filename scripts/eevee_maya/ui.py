@@ -47,6 +47,7 @@ class Controller:
         self.last_diagnostics = 0
         self.last_quality = None
         self.in_tick = False
+        self.waiting_for_view = False
         self.timer = QtCore.QTimer()
         self.timer.timeout.connect(self.tick)
         # Use the later time-change callback; extraction still explicitly evaluates output meshes.
@@ -60,6 +61,18 @@ class Controller:
         if not cmds.modelPanel(self.panel, exists=True):
             stop()
             return
+        # Maya retains modelPanel nodes after closing a tear-off or rebuilding
+        # a layout. Their M3dView may temporarily be unavailable (or 1x1).
+        view = panel_view(self.panel)
+        if view is None:
+            self.waiting_for_view = True
+            self.engine.status = "En pausa: esperando la vista del panel de Maya"
+            self.timer.setInterval(100)
+            return
+        if self.waiting_for_view:
+            self.waiting_for_view = False
+            self.force = True
+            self.timer.setInterval(int(self.engine.config["interval_ms"]))
         self.in_tick = True
         try:
             tick_started = time.perf_counter()
@@ -94,7 +107,7 @@ class Controller:
                 else:
                     viewport.register().set_image(self.engine.image)
                 refresh_started = time.perf_counter()
-                omui.M3dView.getM3dViewFromModelPanel(self.panel).refresh(False, True)
+                view.refresh(False, True)
                 if self.engine.gpu and not native_display:
                     self.presented_once = override.gpu_image.displayed_id == self.engine.received_id
                 elif not self.engine.gpu:self.presented_once=True
@@ -104,7 +117,6 @@ class Controller:
             if self.engine.available:
                 export_started = time.perf_counter()
                 camera = cmds.modelPanel(self.panel, query=True, camera=True)
-                view = omui.M3dView.getM3dViewFromModelPanel(self.panel)
                 aspect = max(1, view.portWidth()) / float(max(1, view.portHeight()))
                 width = max(64, min(1920, int(self.engine.config["max_width"])))
                 height = max(64, min(1920, int(width / aspect)))
@@ -135,7 +147,9 @@ class Controller:
                     data = {"protocol": 1, "camera": exporter.camera(camera, width, height),
                             "width": width, "height": height,
                             "samples": int(self.engine.config["samples"]), "effects": exporter.effects()}
-                    if self.changes.dirty or self.force:
+                    # Requesting another image (quality, camera, light/effect
+                    # settings) does not mean every mesh must be evaluated.
+                    if self.changes.dirty:
                         try:
                             data["mesh_delta"] = self.scene_stream.update()
                         except RuntimeError:
@@ -188,6 +202,15 @@ def stop(*args):
     if _controller:
         _controller.close()
         _controller = None
+
+
+def panel_view(panel):
+    """A modelPanel can exist while Maya has no drawable view for it yet."""
+    try:
+        view = omui.M3dView.getM3dViewFromModelPanel(panel)
+        return view if view.portWidth() > 1 and view.portHeight() > 1 else None
+    except RuntimeError:
+        return None
 
 
 def refresh(*args):
@@ -311,6 +334,7 @@ def attach(panel=None, *args):
     """Use a regular Maya modelPanel, with no separate viewer window."""
     global _controller
     panels = cmds.getPanel(type="modelPanel") or []
+    panels = [candidate for candidate in panels if panel_view(candidate) is not None]
     if panel not in panels:
         panel = cmds.getPanel(withFocus=True)
     if panel not in panels or (_controller and panel == _controller.panel and cmds.window(WINDOW, exists=True)):

@@ -17,6 +17,8 @@ class SceneChanges:
         self.structural_events = []
         self.callbacks.append(om.MDGMessage.addNodeAddedCallback(self.structure_changed, "dependNode"))
         self.callbacks.append(om.MDGMessage.addNodeRemovedCallback(self.structure_changed, "dependNode"))
+        self.callbacks.append(om.MNodeMessage.addNameChangedCallback(om.MObject(), self.name_changed))
+        self.callbacks.append(om.MDagMessage.addAllDagChangesCallback(self.dag_changed))
         for event in ("timeChanged", "Undo", "Redo"):
             self.callbacks.append(om.MEventMessage.addEventCallback(event, self.mark))
         self.callbacks.append(om.MConditionMessage.addConditionCallback("playingBack", self.playback_changed))
@@ -33,6 +35,31 @@ class SceneChanges:
 
     def mark(self, *args):
         self.dirty = True
+
+    def name_changed(self, node, *args):
+        # Exported identifiers are full DAG paths. Renaming a shape, ancestor,
+        # or material invalidates the Python names and Blender's object keys.
+        try:
+            kind = om.MFnDependencyNode(node).typeName
+            if not (node.hasFn(om.MFn.kMesh) or node.hasFn(om.MFn.kTransform)
+                    or kind == "shadingEngine" or cmds.getClassification(kind, satisfies="shader")):
+                return
+        except RuntimeError:
+            return
+        self.paths_changed()
+
+    def dag_changed(self, message, parent, child, *args):
+        try:
+            node = child.node()
+            if not (node.hasFn(om.MFn.kMesh) or node.hasFn(om.MFn.kTransform)):
+                return
+        except RuntimeError:
+            return
+        self.paths_changed()
+
+    def paths_changed(self):
+        self.dirty = self.structural = self.reconnect = self.watch_dirty = True
+        self.structural_events = (self.structural_events + [("identity", "DAG path or material name")])[-32:]
 
     def structure_changed(self, *args):
         self.dirty = True
