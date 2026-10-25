@@ -5,7 +5,7 @@ Viewport experimental de **Blender Eevee dentro de un panel de Maya 2024** en Wi
 ## Instalar en otra máquina
 
 1. Instala **Autodesk Maya 2024 de 64 bits** con su licencia.
-2. Descarga `EeveeMayaBridge-0.6.1-maya2024-win64-Setup.exe` desde [la última versión publicada](https://github.com/gnzlf/eevee-maya-bridge/releases/latest).
+2. Descarga el archivo `EeveeMayaBridge-<versión>-maya2024-win64-Setup.exe` desde [la última versión publicada](https://github.com/gnzlf/eevee-maya-bridge/releases/latest).
 3. Ejecuta el instalador y pulsa **Instalar / actualizar**. Detecta Blender 5.2 existente o descarga Blender 5.2.0 portátil desde blender.org, verificando su SHA-256. No requiere pip, compiladores ni permisos de administrador.
 4. Reinicia Maya. En **Windows > Settings/Preferences > Plug-in Manager**, carga `eeveeBridge.py`. Autoriza su ubicación si Maya lo pide; **Auto load** es opcional.
 5. Usa **Eevee > Activar en viewport actual**.
@@ -18,7 +18,7 @@ El instalador se entrega sin firma de código. Blender conserva sus avisos origi
 
 Maya consulta GitHub en segundo plano al cargar el menú Eevee. Si hay un release posterior, el menú muestra **Nueva versión X disponible…**. También puedes pulsar **Buscar actualizaciones…**.
 
-Pulsa **Descargar e instalar**: el puente descarga el instalador del repositorio configurado, comprueba tamaño y SHA-256 informado por GitHub y abre su interfaz. La instalación usa una carpeta por versión; **la nueva versión se activa al reiniciar Maya**. No sobrescribe las DLL de la sesión abierta ni cierra o guarda escenas. La versión anterior se conserva para poder volver a ella.
+Pulsa **Descargar e instalar**: el puente descarga el instalador del repositorio configurado, comprueba tamaño y SHA-256 informado por GitHub e inicia la instalación automáticamente mostrando su progreso. La instalación usa una carpeta por versión; **la nueva versión se activa al reiniciar Maya**. No sobrescribe las DLL de la sesión abierta ni cierra o guarda escenas. La versión anterior se conserva para poder volver a ella.
 
 La instalación por usuario está en `%LOCALAPPDATA%\EeveeMayaBridge`. La configuración compartida permanece en `config.json`, fuera de `versions`, y se conserva al actualizar. El módulo de Maya se registra en Documents\maya\2024\modules. Si existía un módulo anterior, se conserva una copia antes de sustituirlo. Para volver manualmente a una versión anterior, apunta `EeveeMayaBridge.mod` a su carpeta en `versions`; se aplicará al siguiente inicio de Maya.
 
@@ -61,7 +61,7 @@ Los artefactos quedan en `dist/`. Para publicar una nueva actualización:
 3. Con GitHub CLI autenticado, publica una versión nueva con sus notas:
 
 ```powershell
-./tools/publish_release.ps1 -Version 0.6.2 -NotesFile ./release-notes.md
+./tools/publish_release.ps1 -Version 0.6.3 -NotesFile ./release-notes.md
 ```
 
 El script construye los artefactos, sube `main` y crea el release. No reemplaza versiones ya publicadas. Los usuarios recibirán la oferta al volver a cargar Maya o al pulsar Buscar actualizaciones. También existe el workflow manual **Publicar versión** en GitHub Actions. Cada release conserva ZIP, instalador y SHA256SUMS.txt.

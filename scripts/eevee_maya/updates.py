@@ -94,7 +94,7 @@ def download(update,progress=None,directory=None):
 
 
 def launch(installer):
-    arguments=[str(installer)]
+    arguments=[str(installer),'--auto-install']
     if ROOT.parent.name=='versions':arguments+=['--install-root',str(ROOT.parent.parent)]
     # The installer has its own visible UI; it stages a release for next restart.
     return subprocess.Popen(arguments,close_fds=True)

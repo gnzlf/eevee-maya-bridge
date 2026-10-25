@@ -114,6 +114,7 @@ internal sealed class SetupWindow : Form
         action = new Button { Text = "Instalar / actualizar", Location = new Point(365, 367), Size = new Size(210, 33) };
         Controls.AddRange(new Control[] { heading, description, status, progress, log, action });
         action.Click += StartInstall;
+        if (Array.IndexOf(Program.Arguments,"--auto-install") >= 0) Shown += delegate { action.PerformClick(); };
         FormClosing += delegate(object sender, FormClosingEventArgs e) { if (installing) e.Cancel = true; };
     }
     private void WriteLine(string line)

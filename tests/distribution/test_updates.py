@@ -59,6 +59,10 @@ class ReleaseUpdates(unittest.TestCase):
     def test_redirect_cannot_downgrade_https(self):
         req=urllib.request.Request(self.release['assets'][0]['url'])
         with self.assertRaises(ValueError):updates.SafeRedirect().redirect_request(req,None,302,'Found',{},'http://example.com/file')
+    def test_update_launch_starts_installation_automatically(self):
+        with mock.patch.object(updates.subprocess,'Popen') as launch:
+            updates.launch(Path('verified-installer.exe'))
+            self.assertIn('--auto-install',launch.call_args.args[0])
 
 
 if __name__=='__main__':unittest.main()
