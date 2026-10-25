@@ -48,6 +48,8 @@ class Controller:
         self.last_quality = None
         self.in_tick = False
         self.waiting_for_view = False
+        self.missing_view_since = None
+        self.suspended = False
         self.timer = QtCore.QTimer()
         self.timer.timeout.connect(self.tick)
         # Use the later time-change callback; extraction still explicitly evaluates output meshes.
@@ -65,12 +67,37 @@ class Controller:
         # a layout. Their M3dView may temporarily be unavailable (or 1x1).
         view = panel_view(self.panel)
         if view is None:
+            if self.missing_view_since is None:
+                self.missing_view_since = time.monotonic()
             self.waiting_for_view = True
-            self.engine.status = "En pausa: esperando la vista del panel de Maya"
+            self.engine.status = ("En pausa: renderizador liberado hasta que vuelva el panel" if self.suspended
+                                  else "En pausa: esperando la vista del panel de Maya")
+            if not self.suspended and time.monotonic() - self.missing_view_since >= 3:
+                try:
+                    self.suspend_view()
+                except Exception:
+                    self.engine.status = "No se pudo suspender el renderizador: " + traceback.format_exc()
+                    self.timer.setInterval(1000)
+                    return
             self.timer.setInterval(100)
             return
         if self.waiting_for_view:
             self.waiting_for_view = False
+            self.missing_view_since = None
+            if self.suspended:
+                try:
+                    self.engine.start()
+                except Exception:
+                    detail = traceback.format_exc()
+                    try:
+                        self.engine.stop()
+                    except Exception:
+                        pass
+                    self.waiting_for_view = True
+                    self.timer.setInterval(1000)
+                    self.engine.status = "No se pudo reiniciar Blender: " + detail
+                    return
+                self.suspended = False
             self.force = True
             self.timer.setInterval(int(self.engine.config["interval_ms"]))
         self.in_tick = True
@@ -195,6 +222,23 @@ class Controller:
         if cmds.modelPanel(self.panel, exists=True):
             cmds.modelEditor(self.panel, edit=True, rendererOverrideName="")
         self.engine.stop()
+
+    def suspend_view(self):
+        """A closed tear-off must not keep a complete Blender scene in VRAM."""
+        override = viewport.register()
+        override.gpu_image.release()
+        override.quad.frame = None
+        override.has_image = False
+        self.engine.stop()
+        self.engine.frame = None
+        if self.scene_stream:
+            self.scene_stream.close()
+            self.scene_stream = None
+        self.presented_once = False
+        self.changes.structural = True
+        self.force = True
+        self.suspended = True
+        self.engine.status = "En pausa: renderizador liberado hasta que vuelva el panel"
 
 
 def stop(*args):

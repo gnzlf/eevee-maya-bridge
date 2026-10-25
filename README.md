@@ -32,6 +32,7 @@ Para desinstalar, cierra Maya y Blender y usa **Aplicaciones instaladas de Windo
 
 - Mallas evaluadas de Maya, cambios de puntos, normales, matrices y visibilidad. Maya ejecuta skinClusters, blendShapes, rigs y pesos pintados.
 - Sincronización de rutas al renombrar mallas, grupos o materiales y al cambiar la jerarquía. Espera y recuperación cuando Maya reconstruye la vista de un panel.
+- Si un panel permanece sin vista gráfica durante tres segundos, su proceso Blender se cierra para liberar la escena de la GPU. El puente reconstruye el renderizador cuando vuelve el panel, conservando sus ajustes.
 - Traducción parcial de standardSurface/aiStandardSurface y Lambert/Blinn/Phong, mapas file directos, UDIM y normales/bump directos. Ambient Color e Incandescence de materiales clásicos.
 - Luces Point, Spot, Directional y Area; intensidad, exposición, cono, penumbra, sombras y participación volumétrica por luz.
 - Light linking por objeto y vínculos de sombras desde las relaciones de Maya; editor nativo accesible desde Ajustes > Luz.
