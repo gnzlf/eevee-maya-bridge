@@ -14,9 +14,9 @@ import maya.cmds as cmds
 sys.path.insert(0,str(root/'scripts'))
 from eevee_maya import __version__,engine,gpu_share,scene_stream
 plugin=str(root/'plug-ins/eeveeBridge.py');loaded=cmds.loadPlugin(plugin)[0]
-settings=engine.settings()
+settings=engine.settings();expected_version=json.loads((root/'package.json').read_text())['version']
 status=cmds.eeveeViewport('status')
-checks={'package_version':__version__=='0.6.1','plugin_version':cmds.pluginInfo(plugin,query=True,version=True)==__version__,
+checks={'package_version':__version__==expected_version,'plugin_version':cmds.pluginInfo(plugin,query=True,version=True)==__version__,
         'native_command_registered':status in ('Detenido',['Detenido']),
         'portable_blender_selected':'runtime' in settings['blender'] and Path(settings['blender']).is_file(),
         'gpu_library_loaded':bool(gpu_share.library()),'maya_library_loaded':bool(scene_stream.library())}
