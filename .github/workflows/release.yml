@@ -1,0 +1,27 @@
+name: Publicar versión
+on:
+  workflow_dispatch:
+permissions:
+  contents: write
+jobs:
+  release:
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+      - name: Probar actualizador
+        run: python -m unittest discover -s tests/distribution -v
+      - name: Construir instalador
+        run: python tools/build_release.py
+      - name: Publicar una versión nueva
+        shell: pwsh
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          $source = Get-Content scripts/eevee_maya/__init__.py -Raw
+          $version = [regex]::Match($source, '__version__\s*=\s*"([0-9.]+)"').Groups[1].Value
+          $prefix = "dist/EeveeMayaBridge-$version-maya2024-win64"
+          gh release create "v$version" --target $env:GITHUB_SHA --title "Eevee Maya Bridge $version" --notes-file release-notes.md "$prefix-Setup.exe" "$prefix.zip" dist/SHA256SUMS.txt
+          if ($LASTEXITCODE -ne 0) { throw 'No se publicó. Usa una versión nueva; no reemplaces versiones existentes.' }

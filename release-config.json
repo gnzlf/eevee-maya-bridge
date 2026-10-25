@@ -1,0 +1,7 @@
+{
+  "repository": "gnzlf/eevee-maya-bridge",
+  "maya_versions": ["2024"],
+  "blender_version": "5.2.0",
+  "blender_url": "https://download.blender.org/release/Blender5.2/blender-5.2.0-windows-x64.zip",
+  "blender_sha256": "2d184b626c001692c362291911293b6a297179d618d95e9e9192c3a80318adc4"
+}

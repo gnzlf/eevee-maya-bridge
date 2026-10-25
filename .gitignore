@@ -1,0 +1,16 @@
+__pycache__/
+*.pyc
+diagnostics/
+dist/
+native/build/
+bin/*
+!bin/eevee_gpu_v5.dll
+!bin/eevee_scene.dll
+tests/*
+!tests/distribution/
+tools/*
+!tools/build_release.py
+!tools/publish_release.ps1
+*.part
+*.log
+.vs/

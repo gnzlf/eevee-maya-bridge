@@ -1,0 +1,82 @@
+uniform texture2D bridgeColor;
+uniform sampler2D bridgeSampler = sampler_state { Texture = <bridgeColor>; };
+uniform bool flipVertical = true;
+uniform texture2D bridgeDepth;
+uniform sampler2D bridgeDepthSampler = sampler_state { Texture = <bridgeDepth>; };
+uniform bool hasDepth = false;
+uniform bool screenBloom = false;
+uniform float bloomThreshold = 0.8;
+uniform float bloomStrength = 0.5;
+uniform vec2 pixelSize = {0.0015625, 0.0027778};
+uniform bool previewDof = false;
+uniform float focusDistance = 10.0;
+uniform float focusRegionScale = 1.0;
+uniform float focalLengthCM = 3.5;
+uniform float cameraFstop = 5.6;
+uniform float sensorWidthCM = 3.6;
+uniform float nearClip = 0.1;
+uniform float farClip = 10000.0;
+
+attribute VertexInput {
+    vec3 position : POSITION;
+    vec2 uv : TEXCOORD0;
+}
+attribute Varying {
+    vec2 imageUV : TEXCOORD0;
+}
+attribute PixelOutput {
+    vec4 outputColor : COLOR0;
+}
+GLSLShader BridgeVertex {
+    void main() {
+        gl_Position = vec4(position, 1.0);
+        imageUV = vec2(uv.x, flipVertical ? 1.0 - uv.y : uv.y);
+    }
+}
+GLSLShader BridgePixel {
+    void main() {
+        outputColor = vec4(texture2D(bridgeSampler, imageUV).rgb, 1.0);
+        if (previewDof && hasDepth) {
+            float d = texture2D(bridgeDepthSampler, imageUV).r;
+            float distanceCM = nearClip * farClip / max(0.00001, farClip - d * (farClip - nearClip));
+            distanceCM *= focusRegionScale;
+            float focusCM = max(0.0001,focusDistance*focusRegionScale);
+            float apertureCM = focalLengthCM / max(cameraFstop, 0.1);
+            float circleCM = apertureCM * abs(distanceCM - focusCM) / max(distanceCM, 0.00001)
+                             * focalLengthCM / max(abs(focusCM - focalLengthCM),focalLengthCM*.01);
+            float radius = min(.125/pixelSize.x, 0.5 * circleCM / sensorWidthCM / pixelSize.x);
+            vec3 blurred = vec3(0.0);
+            float dofWeight = 0.0;
+            for (int y = -3; y <= 3; ++y) {
+                for (int x = -3; x <= 3; ++x) {
+                    vec2 offset = vec2(float(x), float(y));
+                    float weight = exp(-dot(offset, offset) / 4.0);
+                    blurred += texture2D(bridgeSampler, imageUV + offset * pixelSize * radius / 3.0).rgb * weight;
+                    dofWeight += weight;
+                }
+            }
+            outputColor.rgb = blurred / dofWeight;
+        }
+        if (screenBloom) {
+            vec3 halo = vec3(0.0);
+            float totalWeight = 0.0;
+            for (int y = -3; y <= 3; ++y) {
+                for (int x = -3; x <= 3; ++x) {
+                    vec2 offset = vec2(float(x), float(y));
+                    float weight = exp(-dot(offset, offset) / 4.0);
+                    vec3 sampleColor = texture2D(bridgeSampler, imageUV + offset * pixelSize * 4.0).rgb;
+                    halo += max(sampleColor - vec3(bloomThreshold), vec3(0.0)) * weight;
+                    totalWeight += weight;
+                }
+            }
+            outputColor.rgb += halo * bloomStrength / totalWeight;
+        }
+        gl_FragDepth = hasDepth ? texture2D(bridgeDepthSampler, imageUV).r : 1.0;
+    }
+}
+technique Main {
+    pass Draw {
+        VertexShader (in VertexInput, out Varying) = BridgeVertex;
+        PixelShader (in Varying, out PixelOutput) = BridgePixel;
+    }
+}
