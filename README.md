@@ -8,7 +8,7 @@ Viewport experimental de **Blender Eevee dentro de un panel de Maya 2024** en Wi
 2. Descarga el archivo `EeveeMayaBridge-<versión>-maya2024-win64-Setup.exe` desde [la última versión publicada](https://github.com/gnzlf/eevee-maya-bridge/releases/latest).
 3. Ejecuta el instalador y pulsa **Instalar / actualizar**. Detecta Blender 5.2 existente o descarga Blender 5.2.0 portátil desde blender.org, verificando su SHA-256. No requiere pip, compiladores ni permisos de administrador.
 4. Reinicia Maya. En **Windows > Settings/Preferences > Plug-in Manager**, carga `eeveeBridge.py`. Autoriza su ubicación si Maya lo pide; **Auto load** es opcional.
-5. Usa **Eevee > Activar en viewport actual**.
+5. En el propio viewport, elige **Renderer > Eevee**. El cuadradito a su derecha abre los ajustes, incluso antes de iniciar el motor. Para salir, selecciona **Renderer > Viewport 2.0**.
 
 Maya debe utilizar OpenGL/OpenGL Core Profile. Si usa DirectX 11, cambia el motor en Preferences > Display y reinicia Maya. Probado con Maya 2024.2, Blender 5.2.0 LTS y RTX 3070. No utiliza CUDA ni núcleos RTX; el transporte actual requiere interoperabilidad WGL/D3D11 y solo se ha certificado en esta GPU/controlador NVIDIA. Otras versiones de Maya requieren recompilar y validar `eevee_scene.dll` con su SDK.
 
@@ -30,6 +30,8 @@ Para desinstalar, cierra Maya y Blender y usa **Aplicaciones instaladas de Windo
 
 ## Funciones
 
+- Integración en el menú Renderer de Maya con su cuadradito de opciones. Los ajustes pueden abrirse sin arrancar Blender y permanecen abiertos al activar o desactivar Eevee. El menú superior Eevee conserva ajustes, recarga y actualizaciones; ya no ofrece los dos modos de apertura de panel.
+- Indicador animado dentro del viewport hasta recibir la primera imagen: muestra inicio, lectura de escena, materiales, geometría y preparación de shaders, con contadores reales cuando están disponibles y tiempo transcurrido. No estima un porcentaje ni tiempo restante. Cambiar a Viewport 2.0 cancela el arranque; los fallos muestran un mensaje en el viewport.
 - Mallas evaluadas de Maya, cambios de puntos, normales, matrices y visibilidad. Maya ejecuta skinClusters, blendShapes, rigs y pesos pintados.
 - Sincronización de rutas al renombrar mallas, grupos o materiales y al cambiar la jerarquía. Espera y recuperación cuando Maya reconstruye la vista de un panel.
 - Si un panel permanece sin vista gráfica durante tres segundos, su proceso Blender se cierra para liberar la escena de la GPU. El puente reconstruye el renderizador cuando vuelve el panel, conservando sus ajustes.
@@ -74,16 +76,18 @@ python tools/build_release.py
 
 Con `mayapy` también puedes ejecutar `tests/distribution/probe_scene_changes.py`, `probe_light_links.py` y `probe_focus.py`: crean escenas temporales para verificar jerarquía, vínculos y enfoque de superficies, incluidas deformaciones, unidades y escala de cámara. `probe_native_playblast.py`, `probe_focus_gui.py`, `probe_navigation_callback.py` y `probe_shadow_quality.py` se ejecutan dentro de una sesión gráfica de Maya dedicada a pruebas; crean escenas temporales para comprobar captura, enfoque, calidad de sombras y sincronización por dibujo nativo con el temporizador Qt detenido. No los ejecutes en una sesión con trabajo sin guardar. `probe_volume_bounds.py` se ejecuta con Blender en background para comprobar el cálculo de límites de la atmósfera.
 
-Los artefactos quedan en `dist/`. Para publicar una nueva actualización:
-
 `probe_material_translation.py` también se ejecuta en el Maya gráfico dedicado de pruebas: comprueba Lambert, máscaras especulares, transmisión, material por defecto y colores por cara con una escena genérica.
+
+`probe_native_startup.py` comprueba el menú Renderer y su cuadradito, la animación, cancelación y errores de inicio. `probe_startup_playblast.py` compara una captura pedida antes de terminar el arranque con la misma captura del motor ya iniciado.
+
+Los artefactos quedan en `dist/`. Para publicar una nueva actualización:
 
 1. Modifica el código y aumenta `__version__` en `scripts/eevee_maya/__init__.py`.
 2. Ejecuta las pruebas correspondientes y confirma los cambios en Git.
 3. Con GitHub CLI autenticado, publica una versión nueva con sus notas:
 
 ```powershell
-./tools/publish_release.ps1 -Version 0.6.10 -NotesFile ./release-notes.md
+./tools/publish_release.ps1 -Version 0.6.11 -NotesFile ./release-notes.md
 ```
 
 El script construye los artefactos, sube `main` y crea el release. No reemplaza versiones ya publicadas. Los usuarios recibirán la oferta al volver a cargar Maya o al pulsar Buscar actualizaciones. También existe el workflow manual **Publicar versión** en GitHub Actions. Cada release conserva ZIP, instalador y SHA256SUMS.txt.

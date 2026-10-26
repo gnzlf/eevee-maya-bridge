@@ -2,6 +2,7 @@
 import atexit
 import traceback
 import time
+from types import SimpleNamespace
 
 import maya.cmds as cmds
 import maya.mel as mel
@@ -26,6 +27,36 @@ from .mesh_packet import records
 WINDOW = "eeveeBridgeWindow"
 MENU = "eeveeBridgeMenu"
 _controller = None
+_runtime_config = None
+_settings_contexts = {}
+
+
+def runtime_settings():
+    global _runtime_config
+    if _runtime_config is None:
+        _runtime_config = settings()
+        for key, preference in shadow_quality.PREFERENCES.items():
+            if cmds.optionVar(exists=preference):
+                _runtime_config[key] = cmds.optionVar(query=preference)
+    return _runtime_config
+
+
+def target_panel(panel=None):
+    panels = [p for p in cmds.getPanel(type='modelPanel') or [] if panel_view(p) is not None]
+    if panel in panels: return panel
+    focused = cmds.getPanel(withFocus=True)
+    if focused in panels: return focused
+    if _controller and _controller.panel in panels: return _controller.panel
+    visible = cmds.getPanel(visiblePanels=True) or []
+    return next((p for p in visible if p in panels), None)
+
+
+def settings_context(panel):
+    if _controller and _controller.panel == panel: return _controller
+    if panel not in _settings_contexts:
+        _settings_contexts[panel] = SimpleNamespace(panel=panel, force=False,
+            engine=SimpleNamespace(config=runtime_settings(), status='Elige Renderer > Eevee para iniciar'))
+    return _settings_contexts[panel]
 
 
 class Controller:
@@ -37,9 +68,7 @@ class Controller:
         override.quad.frame=None
         override.has_image=False
         self.engine = Engine()
-        for key, preference in shadow_quality.PREFERENCES.items():
-            if cmds.optionVar(exists=preference):
-                self.engine.config[key] = cmds.optionVar(query=preference)
+        self.engine.config = runtime_settings()
         self.engine.gpu = bool(self.engine.config.get("gpu_transport", False))
         self.force = True
         self.presented_once = False
@@ -62,13 +91,32 @@ class Controller:
         self.capture_records = []
         self.capture_error = None
         self.capture_syncing = False
+        self.startup_error = None
+        self.loading_timer = QtCore.QTimer()
+        self.loading_timer.timeout.connect(self.refresh_loading)
         self.timer = QtCore.QTimer()
         self.timer.timeout.connect(self.tick)
         # Use the later time-change callback; extraction still explicitly evaluates output meshes.
         self.playback_callback = om.MDGMessage.addForceUpdateCallback(self.time_changed)
         self.pre_render_callback = omui.MUiMessage.add3dViewPreRenderMsgCallback(panel, self.before_draw)
-        self.engine.start()
+        try:
+            self.engine.start()
+        except Exception as exc:
+            self.startup_error = str(exc)
+            self.engine.status = 'No se pudo iniciar Eevee: ' + str(exc)
         self.timer.start(int(self.engine.config["interval_ms"]))
+        self.loading_timer.start(50)
+
+    def refresh_loading(self):
+        if capture.active(): return
+        if self.presented_once:
+            self.loading_timer.stop();return
+        if not cmds.modelPanel(self.panel, exists=True):
+            stop();return
+        if cmds.modelEditor(self.panel, query=True, rendererOverrideName=True) != viewport.NAME:
+            stop();return
+        view = panel_view(self.panel)
+        if view is not None: view.refresh(False, True)
 
     def tick(self, *args, refresh=True):
         if self.in_tick or self.capture_syncing or capture.active():
@@ -100,8 +148,12 @@ class Controller:
             if self.suspended:
                 try:
                     self.engine.start()
+                    self.startup_error = None
+                    self.loading_timer.start(50)
                 except Exception:
                     detail = traceback.format_exc()
+                    self.startup_error = detail
+                    self.loading_timer.start(250)
                     try:
                         self.engine.stop()
                     except Exception:
@@ -119,10 +171,18 @@ class Controller:
             if self.last_quality!=self.engine.config["max_width"]:
                 sync_quality_menu(self.engine.config["max_width"])
                 self.last_quality=self.engine.config["max_width"]
-            if self.presented_once and cmds.modelEditor(self.panel,query=True,rendererOverrideName=True)!=viewport.NAME:
+            if cmds.modelEditor(self.panel,query=True,rendererOverrideName=True)!=viewport.NAME:
                 stop()
                 return
+            if self.startup_error and self.engine.process is None:
+                self.timer.setInterval(250)
+                return
             received = self.engine.poll()
+            if not self.presented_once and (self.engine.last_response.get('error') or
+                    self.engine.process is not None and self.engine.process.poll() is not None):
+                self.startup_error = self.engine.last_response.get('error') or self.engine.status
+                self.timer.setInterval(250)
+                return
             if self.engine.gpu and viewport.register().gpu_image.displayed_id:
                 self.presented_once = True
             # While the renderer is busy, avoid thousands of Maya commands per
@@ -142,10 +202,8 @@ class Controller:
                 override.has_image = False
                 if self.engine.shared: self.engine.shared.acknowledge(held_id)
             if received:
-                if not self.presented_once:
-                    # Opening a scene can queue Maya's panel-state restoration
-                    # after attach(). Bind when the first real frame is ready.
-                    cmds.modelEditor(self.panel,edit=True,rendererName="vp2Renderer",rendererOverrideName=viewport.NAME)
+                if native_display:
+                    self.presented_once = True
                 self.timings["response_age_ms"] = (time.perf_counter() - self.engine.last_response.get("finished_at", time.perf_counter())) * 1000
                 if self.engine.frame:
                     if not native_display: override.set_frame(self.engine.frame)
@@ -163,6 +221,9 @@ class Controller:
                 if not self.engine.shared:
                     self.engine.prune_frames()
             if self.engine.available:
+                if not self.engine.sent_id:
+                    self.engine.startup_stage = {'stage':'export'}
+                    if refresh: view.refresh(False, True)
                 export_started = time.perf_counter()
                 camera = cmds.modelPanel(self.panel, query=True, camera=True)
                 aspect = max(1, view.portWidth()) / float(max(1, view.portHeight()))
@@ -173,6 +234,8 @@ class Controller:
                 self.timings["export_ms"] = (time.perf_counter() - export_started) * 1000
                 submit_started = time.perf_counter()
                 submitted = self.engine.submit(data, force=self.force)
+                if submitted and not self.presented_once:
+                    self.engine.startup_stage = {'stage':'shaders'}
                 self.timer.setInterval(int(self.engine.config['interval_ms']) if submitted else 16)
                 self.timings["submit_ms"] = (time.perf_counter() - submit_started) * 1000
                 self.force = False
@@ -186,6 +249,7 @@ class Controller:
                 self.last_diagnostics = time.monotonic()
         except Exception:
             self.timer.stop()
+            self.startup_error = traceback.format_exc()
             self.engine.status = "Error en Maya: ver maya_error.txt"
             (self.engine.session / "maya_error.txt").write_text(traceback.format_exc(), encoding="utf-8")
             cmds.warning(traceback.format_exc())
@@ -317,6 +381,7 @@ class Controller:
 
     def close(self):
         self.timer.stop()
+        self.loading_timer.stop()
         om.MMessage.removeCallback(self.playback_callback)
         try:
             om.MMessage.removeCallback(self.pre_render_callback)
@@ -327,7 +392,7 @@ class Controller:
         if self.scene_stream:
             self.scene_stream.close()
             self.scene_stream = None
-        if cmds.modelPanel(self.panel, exists=True):
+        if cmds.modelPanel(self.panel, exists=True) and cmds.modelEditor(self.panel,query=True,rendererOverrideName=True)==viewport.NAME:
             cmds.modelEditor(self.panel, edit=True, rendererOverrideName="")
         self.engine.stop()
 
@@ -343,6 +408,7 @@ class Controller:
             self.scene_stream.close()
             self.scene_stream = None
         self.presented_once = False
+        self.loading_timer.stop()
         self.changes.structural = True
         self.force = True
         self.suspended = True
@@ -367,6 +433,10 @@ def panel_view(panel):
 
 def refresh(*args):
     if _controller:
+        if _controller.startup_error:
+            _controller.suspend_view()
+            _controller.waiting_for_view = True
+            _controller.startup_error = None
         _controller.force = True
         _controller.changes.structural = True
         if not _controller.timer.isActive():
@@ -423,9 +493,11 @@ def scene_settings(*args, select=True):
     return node
 
 
-def show_settings(*args):
+def show_settings(*args, panel=None):
     from .settings_window import show
-    return show(_controller)
+    panel = target_panel(panel)
+    if panel is None: raise RuntimeError('Abre un viewport de Maya para configurar Eevee')
+    return show(settings_context(panel))
 
 
 def show(*args):
@@ -493,7 +565,7 @@ def attach(panel=None, *args):
         visible = cmds.getPanel(visiblePanels=True) or []
         panel = next((p for p in visible if p in panels and (not _controller or p != _controller.panel)), None)
     if panel is None:
-        return show()
+        raise RuntimeError('Abre un viewport de Maya y elige Renderer > Eevee')
     if render.MRenderer.drawAPI() == render.MRenderer.kDirectX11:
         raise RuntimeError("Eevee Bridge requiere OpenGL. Configuralo en Preferences > Display y reinicia Maya.")
     if render.MRenderer.findRenderOverride(viewport.NAME) is None:
@@ -517,13 +589,11 @@ def install_menu():
     remove_menu()
     capture.install()
     main = mel.eval("$tmp = $gMainWindow")
+    # buildRendererMenu discovers <overrideName>OptionBox automatically.
+    mel.eval('global proc EeveeBridgeOptionBox() { python("from eevee_maya import ui; ui.show_settings()"); }')
     cmds.menu(MENU, label="Eevee", parent=main, tearOff=True)
-    cmds.menuItem(label="Activar en viewport actual", command=lambda *args: attach())
-    cmds.menuItem(label="Abrir panel independiente", command=show)
-    cmds.menuItem(label="Actualizar", command=refresh)
     cmds.menuItem(label="Ajustes del viewport Eevee", command=show_settings)
-    cmds.menuItem(label="Nodo de efectos", command=scene_settings)
-    cmds.menuItem(label="Detener Blender", command=stop)
+    cmds.menuItem(label="Recargar escena en Eevee", command=refresh)
     from . import updates_ui
     updates_ui.install_menu(MENU)
 

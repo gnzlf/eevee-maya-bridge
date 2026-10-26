@@ -53,6 +53,8 @@ class Engine:
         # manipulator/attribute edits visibly trail Maya's native overlays.
         self.playing = False
         self.history = deque(maxlen=4096)
+        self.startup_stage = {'stage': 'starting'}
+        self.startup_read_at = 0
 
     def start(self):
         if self.process and self.process.poll() is None:
@@ -89,7 +91,18 @@ class Engine:
         self.history.clear()
         self.signature = None
         self.ready = False
+        self.startup_stage = {'stage': 'starting'}
+        self.startup_read_at = 0
         self.status = "Iniciando Blender / Eevee..."
+
+    def startup_progress(self):
+        if self.sent_id and time.monotonic() - self.startup_read_at >= .1:
+            self.startup_read_at = time.monotonic()
+            try:
+                self.startup_stage = read_json(self.session / 'startup.json')
+            except (OSError, ValueError):
+                pass
+        return self.startup_stage
 
     def poll(self):
         if not self.process:

@@ -3,6 +3,7 @@ import maya.api.OpenMayaRender as render
 from pathlib import Path
 import ctypes
 import time
+import math
 from collections import deque
 
 ROOT = Path(__file__).resolve().parents[2]
@@ -221,6 +222,70 @@ class CaptureFailure(render.MSceneRender):
         return operation
 
 
+class LoadingBackground(CaptureFailure):
+    def __init__(self):
+        render.MSceneRender.__init__(self, 'EeveeStartupBackground')
+
+    def renderFilterOverride(self):
+        return render.MSceneRender.kRenderUIItems
+
+    def clearOperation(self):
+        operation = super().clearOperation()
+        operation.setClearColor((.035, .04, .05, 1))
+        return operation
+
+
+class Loading(render.MHUDRender):
+    def __init__(self):
+        super().__init__()
+        self.draws = 0
+        self.last_status = {}
+
+    def execute(self, context):
+        pass
+
+    def hasUIDrawables(self):
+        return True
+
+    def addUIDrawables(self, draw, context):
+        from . import ui, startup
+        import maya.api.OpenMaya as om
+        controller = ui._controller
+        progress, elapsed, error = {'stage':'starting'}, 0, None
+        if controller:
+            engine = controller.engine
+            progress = engine.startup_progress()
+            elapsed = max(0, time.monotonic() - engine.started)
+            error = (controller.startup_error or engine.last_response.get('error')
+                     or controller.engine.frame is not None and _override.gpu_image.error)
+            if engine.process is not None and engine.process.poll() is not None:
+                error = 'El motor se cerró. Consulta el Script Editor y el registro de Eevee.'
+        _, _, width, height = context.getViewportDimensions()
+        x, y = width*.5, height*.5
+        phase = int(time.monotonic()*16) % 12
+        draw.beginDrawable(render.MUIDrawManager.kNonSelectable)
+        draw.setLineWidth(3)
+        for index in range(12):
+            angle = index*math.pi/6
+            alpha = .15 + .85*((index-phase) % 12)/11
+            draw.setColor(om.MColor((.95,.3,.25,1) if error else (.25,.65,1,alpha)))
+            draw.line2d(om.MPoint(x+math.cos(angle)*19,y+55+math.sin(angle)*19),
+                        om.MPoint(x+math.cos(angle)*29,y+55+math.sin(angle)*29))
+        draw.setColor(om.MColor((.92,.94,.98,1)));draw.setFontSize(20)
+        draw.text2d(om.MPoint(x,y+3),'Eevee',render.MUIDrawManager.kCenter)
+        draw.setFontSize(13)
+        text = 'No se pudo iniciar Eevee' if error else startup.label(progress)
+        draw.text2d(om.MPoint(x,y-25),text,render.MUIDrawManager.kCenter,dynamic=True)
+        draw.setFontSize(11);draw.setColor(om.MColor((.65,.69,.75,1)))
+        detail = str(error).splitlines()[-1][:max(24,min(160,int(width/7)))] if error else '%.0f s transcurridos' % elapsed
+        draw.text2d(om.MPoint(x,y-49),detail,render.MUIDrawManager.kCenter,dynamic=True)
+        draw.text2d(om.MPoint(x,y-78),'Renderer > Viewport 2.0 para salir',render.MUIDrawManager.kCenter)
+        draw.endDrawable()
+        self.draws += 1
+        self.last_status = {'label':text,'phase':phase,'elapsed':elapsed,'error':bool(error),
+                            'viewport':[width,height]}
+
+
 class Override(render.MRenderOverride):
     def __init__(self):
         super().__init__(NAME)
@@ -232,6 +297,8 @@ class Override(render.MRenderOverride):
         self.native = {}
         self.present = render.MPresentTarget("EeveePresent")
         self.capture_failure = CaptureFailure()
+        self.loading_background = LoadingBackground()
+        self.loading = Loading()
         self.operations = []
         self.index = 0
         self.has_image = False
@@ -239,7 +306,7 @@ class Override(render.MRenderOverride):
         self.pending_attach = False
 
     def uiName(self):
-        return "Eevee (Blender Bridge)"
+        return "Eevee"
 
     def supportedDrawAPIs(self):
         # Copy.ogsfx ships with Maya and runs on its OpenGL renderer.
@@ -271,10 +338,17 @@ class Override(render.MRenderOverride):
             # Native navigation can draw while Qt timers are delayed. Update
             # the textures for this draw without requesting a recursive redraw.
             ui._controller.tick(refresh=False)
+        controller = ui._controller
+        if (not capture.active() and controller is not None and controller.panel == destination
+                and not controller.presented_once and (controller.startup_error or self.gpu_image.error)):
+            self.operations = [self.loading_background, self.loading, self.present]
+            return
         image = self.gpu_image if self.gpu_image.frame else self.quad
         self.operations = ([image, self.overlay, self.present] if self.has_image
-                           else [self.fallback, self.present])
-        if self.native.get("displayAppearance") in ("wireframe", "points", "boundingBox"):
+                           else [self.loading_background, self.loading, self.present])
+        if not self.has_image and controller is not None and controller.presented_once:
+            self.operations = [self.fallback, self.present]
+        if (self.has_image or controller is not None and controller.presented_once) and self.native.get("displayAppearance") in ("wireframe", "points", "boundingBox"):
             self.operations = [self.fallback, self.present]
         elif self.has_image and self.native.get("wireframeOnShaded"):
             self.operations = [image, self.wire_overlay, self.overlay, self.present]

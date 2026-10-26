@@ -22,6 +22,7 @@ class SceneMirror:
         self.texture_links = []
         self.original_materials = {}
         self.link_collections = {}
+        self.progress = None
 
     def sync_light_links(self,obj,spec):
         meshes={name:mesh for name,mesh in self.objects.items() if mesh.type=='MESH'}
@@ -53,7 +54,7 @@ class SceneMirror:
                 if "points" in delta: spec["points_buffer"] = delta["points"]
                 if "normals" in delta: spec["normals_buffer"] = delta["normals"]
                 if "matrix" in delta: spec["matrix"] = np.frombuffer(delta["matrix"], dtype="<f8").tolist()
-            worker.build_scene(request, transmission_preview=True)
+            worker.build_scene(request, transmission_preview=True, progress=self.progress)
             self.light_signature = None
             self.light_specs = {}
             self.link_collections = {}
@@ -95,7 +96,7 @@ class SceneMirror:
                         rebuild = True
                         break
         if rebuild:
-            worker.build_scene(request, transmission_preview=True)
+            worker.build_scene(request, transmission_preview=True, progress=self.progress)
             self.light_signature = None
             self.light_specs = {}
             self.link_collections = {}

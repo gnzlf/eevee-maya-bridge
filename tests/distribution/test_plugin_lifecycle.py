@@ -26,7 +26,7 @@ def environment():
     cmds.about = mock.Mock(return_value=False)
     cmds.evalDeferred = mock.Mock()
     render = types.ModuleType('maya.api.OpenMayaRender')
-    for name in ('MUserRenderOperation', 'MQuadRender', 'MSceneRender', 'MRenderOverride', 'MPresentTarget'):
+    for name in ('MUserRenderOperation', 'MQuadRender', 'MSceneRender', 'MHUDRender', 'MRenderOverride', 'MPresentTarget'):
         setattr(render, name, RenderBase)
     render.MRenderer = mock.Mock()
     render.MRenderer.findRenderOverride.return_value = None

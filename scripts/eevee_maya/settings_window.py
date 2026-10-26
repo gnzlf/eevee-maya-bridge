@@ -105,7 +105,7 @@ class SettingsWindow:
                             ("fogColor", "Color de niebla"), ("anisotropy", "Anisotropía")):
             self.attribute(node+"."+attr, label)
         cmds.separator(style="in", height=12)
-        menu = self.quality = cmds.optionMenu(label="Ancho del render", changeCommand=lambda value:ui.set_quality(int(value)))
+        menu = self.quality = cmds.optionMenu(label="Ancho del render", changeCommand=self.set_render_width)
         for width in (320, 640, 960, 1280, 1920): cmds.menuItem(label=str(width))
         cmds.optionMenu(menu, edit=True, value=str(controller.engine.config["max_width"]))
         cmds.text(label="La iluminación admite Point, Spot, Directional y Area. La respuesta de luz y materiales puede diferir de Viewport 2.0 y Arnold.", align="left", wordWrap=True)
@@ -154,6 +154,10 @@ class SettingsWindow:
     def set_navigation(self,key,value):
         self.controller.engine.config[key]=value
         self.controller.force=True
+
+    def set_render_width(self, value):
+        self.controller.engine.config['max_width'] = int(value)
+        self.controller.force = True
 
     def set_shadow_quality(self, label):
         key = next(key for text,key in shadow_quality.LABELS if text==label)
@@ -228,10 +232,11 @@ class SettingsWindow:
     def refresh(self):
         from . import ui
         if not cmds.window(WINDOW,exists=True): self.timer.stop(); return
-        if ui._controller is not self.controller:
+        if not cmds.modelPanel(self.panel,exists=True):
             self.timer.stop()
             cmds.deleteUI(self.window)
             return
+        self.controller = ui.settings_context(self.panel)
         state=native_controls.read(self.panel)
         cmds.checkBox(self.shadow_enabled,edit=True,value=state['shadows'])
         if cmds.optionMenu(self.quality,query=True,value=True)!=str(self.controller.engine.config["max_width"]):

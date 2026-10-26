@@ -245,7 +245,7 @@ def configure_color(request):
     return settings
 
 
-def build_scene(request, transmission_preview=False):
+def build_scene(request, transmission_preview=False, progress=None):
     configure_color(request)
     for obj in list(bpy.data.objects):
         bpy.data.objects.remove(obj, do_unlink=True)
@@ -255,9 +255,12 @@ def build_scene(request, transmission_preview=False):
         for block in list(collection):
             if block.users == 0:
                 collection.remove(block)
-    mats = {spec["name"]: make_material(spec, transmission_preview=transmission_preview)
-            for spec in request["materials"]}
-    for spec in request["meshes"]:
+    mats = {}
+    for index, spec in enumerate(request['materials']):
+        if progress: progress('materials', index, len(request['materials']))
+        mats[spec['name']] = make_material(spec, transmission_preview=transmission_preview)
+    for index, spec in enumerate(request["meshes"]):
+        if progress: progress('meshes', index, len(request['meshes']))
         mesh = bpy.data.meshes.new(spec["name"])
         if spec.get("binary_geometry"):
             points = np.frombuffer(spec["points_buffer"], dtype="<f4")

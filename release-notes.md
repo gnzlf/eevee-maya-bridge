@@ -1,11 +1,11 @@
-Correcciones de materiales, ojos y color de piel.
+Inicio y ajustes desde el viewport nativo de Maya.
 
-- Traducción de specularColor y sus texturas en Standard Surface, aiStandardSurface, Blinn y Phong. Las máscaras especulares ya pueden mantener oscuras las pupilas en lugar de producir un reflejo blanco uniforme.
-- Los Lambert dejan de recibir el reflejo especular que el puente añadía por defecto. Se conservan sus colores y las asignaciones de materiales por cara.
-- El render sigue el espacio lineal ACEScg, Rec.709 o Rec.2020 de Maya. Corrige la interpretación de colores constantes ACEScg como Rec.709, que apagaba tonos de piel y ropa. Las texturas se convierten al mismo espacio de trabajo dentro de Blender, sin modificar los archivos originales.
-- Las vistas comunes se aproximan con sus equivalentes de Blender: ACES 1.x usa ACES 1.3 y Un-tone-mapped usa Standard. No hay paridad completa con vistas o configuraciones OCIO personalizadas; la imagen también puede diferir por la iluminación y los modelos de sombreado.
-- La transmisión del viewport usa transparencia y reflexión Fresnel para ver objetos detrás de córneas o cristales sin activar raytracing global. Es una aproximación sin refracción óptica completa. Las superficies totalmente transmisivas no tapan la profundidad usada por AO/DOF; el botón nativo de material por defecto puede volverlas opacas y restaura su estado original al desactivarlo.
+- Eevee aparece como Renderer > Eevee. El cuadradito de opciones junto a su nombre abre los ajustes mediante el mecanismo nativo de Maya, igual que otros renderizadores del panel.
+- Los ajustes pueden abrirse antes de encender el motor. Los cambios de esa sesión se aplican al activarlo, y la ventana permanece abierta al cambiar entre Eevee y Viewport 2.0.
+- Se retiran del menú superior los comandos «Activar en viewport actual» y «Abrir panel independiente». Ese menú conserva ajustes, recarga y actualizaciones. La entrada habitual es ahora Renderer > Eevee.
+- Indicador animado dentro del viewport durante el arranque. Muestra las etapas reales: inicio del motor, lectura de escena, preparación de materiales y geometría, shaders y primera imagen. Incluye contadores cuando están disponibles y tiempo transcurrido; no inventa porcentajes ni un tiempo restante.
+- Cambiar a Viewport 2.0 cancela también un arranque pendiente, sin que Eevee vuelva a seleccionarse al llegar una imagen tardía. Los fallos de arranque se muestran en el propio viewport. El indicador se retira al presentar la primera imagen y su temporizador se detiene.
 
-Validación: comparación visual en una escena de producción con personajes; pruebas GPU de pupilas, máscaras especulares, transparencia y asignaciones por cara; captura nativa PNG/AVI Full HD; pruebas de distribución e instalación. No se modifican las escenas, referencias ni texturas originales.
+Validación: uso del menú Renderer real de Maya y su cuadradito, imágenes distintas de la animación, ajustes sin arrancar Blender, cancelación, errores de inicio, recuperación del panel y playblast PNG/AVI Full HD.
 
-Actualiza desde Eevee > Buscar actualizaciones y reinicia Maya después de guardar tu trabajo. El puente sigue siendo experimental y no reproduce todas las redes de materiales de Arnold. El instalador no tiene firma de código.
+Actualiza desde Eevee > Buscar actualizaciones y reinicia Maya después de guardar tu trabajo. Después usa Renderer > Eevee en el viewport. El puente sigue siendo experimental. El instalador no tiene firma de código.

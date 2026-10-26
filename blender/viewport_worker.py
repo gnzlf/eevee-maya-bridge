@@ -55,6 +55,17 @@ responses = SharedMailbox(session.name, "response", 1024 * 1024)
 mirror = SceneMirror()
 state = {"last_id": 0, "offscreen": None, "depth_offscreen": None, "depth_batches": {},
          "last_effects": None, "area": None, "size": None}
+
+
+def startup_progress(stage, completed=0, total=0):
+    if state.get('rendered_once'): return
+    now = time.monotonic()
+    if stage == state.get('startup_stage') and now - state.get('startup_updated', 0) < .1: return
+    write_json(session / 'startup.json', {'stage':stage, 'completed':completed, 'total':total})
+    state['startup_stage'], state['startup_updated'] = stage, now
+
+
+mirror.progress = startup_progress
 kernel = ctypes.WinDLL("kernel32", use_last_error=True)
 kernel.OpenProcess.argtypes = [wintypes.DWORD, wintypes.BOOL, wintypes.DWORD]
 kernel.OpenProcess.restype = wintypes.HANDLE
@@ -271,6 +282,7 @@ def tick():
         update_finished = time.perf_counter()
         projection = cam.calc_matrix_camera(bpy.context.evaluated_depsgraph_get(), x=width, y=height)
         view = cam.matrix_world.inverted()
+        startup_progress('shaders')
         state["offscreen"].draw_view3d(scene, bpy.context.view_layer, state["space"], state["region"],
                                       view, projection, do_color_management=True)
         color_finished = time.perf_counter()
@@ -288,6 +300,8 @@ def tick():
                 pixels = np.asarray(gpu.state.active_framebuffer_get().read_color(
                     0, 0, width, height, 4, 0, "FLOAT"), dtype=np.float32).copy()
         depth = render_depth(width, height, view, projection, gpu_transport)
+        startup_progress('presenting')
+        state['rendered_once'] = True
         seconds = time.perf_counter() - started
         if not gpu_transport:
             shared.write(request["id"], width, height, pixels, depth, seconds)
