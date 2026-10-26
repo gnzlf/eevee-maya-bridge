@@ -24,5 +24,6 @@ class InteractionQuality:
             if width > maximum:
                 snapshot['width'] = maximum
                 snapshot['height'] = max(64, round(height * maximum / width))
-            snapshot['samples'] = min(snapshot['samples'], 2)
+            # Keep Maya's AA count on each animated pose. Two samples caused
+            # visible noise and shimmering even with the native AA button on.
         return snapshot

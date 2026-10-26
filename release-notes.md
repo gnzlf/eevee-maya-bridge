@@ -1,14 +1,11 @@
-Playblast por fotograma, respuesta interactiva y correcciones de cámara y luces.
+Antialiasing durante animación y enfoque por superficie.
 
-- El playblast nativo espera la imagen correspondiente a cada pose evaluada de Maya. Funciona con secuencias de imágenes y vídeo; respeta las dimensiones reales de captura, sin aplicar la reducción de calidad interactiva.
-- Un fallo del renderizador produce un aviso, diagnóstico y fotogramas rojos para evitar entregar imágenes antiguas como válidas. Maya puede conservar una captura parcial; la función Python `eevee_maya.capture.playblast` también lanza una excepción.
-- Calidad adaptativa al editar y reproducir: hasta 960 píxeles de ancho y dos muestras mientras hay movimiento, con recuperación de calidad al detenerse. Se puede desactivar. Menos consultas a Maya mientras el renderizador trabaja y caché de light links invalidada por cambios y Undo/Redo.
-- Ajustes de cámara: botones para activar los tres controles necesarios de DOF y para enfocar la selección. El estado indica si la cámara, el preview o el control global tienen desactivado el desenfoque. Conserva los parámetros nativos hasta pulsar esos botones.
-- Corrige luces auxiliares de 180 grados generadas por valores altos de Dropoff: el volumen de una spotlight deja de extenderse lateralmente como una point light. Conserva el cono, la penumbra y el Dropoff de Maya.
-- Elegir Eevee en el menú Renderer del viewport activa su controlador; corrige el caso de panel seleccionado con imagen congelada.
+- La calidad adaptativa conserva las muestras AA seleccionadas en Maya durante reproducción, navegación y edición. Deja de imponer dos muestras al moverse. La reducción temporal a 960 píxeles sigue disponible; más muestras tienen coste de GPU.
+- El autofoco sobre una malla usa la primera superficie visible en dirección al centro de la selección, en lugar del centro de su bounding box. Los componentes mantienen la profundidad seleccionada. Se consulta la cámara actual del panel y se respetan unidades y escala del rig.
+- Nuevo botón en Ajustes > Cámara: «Enfocar un punto con un clic en el viewport». Permite enfocar un ojo o una zona concreta del rostro. No cambia la selección y vuelve a la herramienta anterior después del clic; Q permite salir sin enfocar.
+- El enfoque establece el atributo nativo Focus Distance y activa los controles DOF de cámara, panel y viewport. Los cambios pueden deshacerse con Undo.
+- El preview aplica DOF una sola vez: desactiva el desenfoque de Blender en la imagen de origen antes de la presentación con profundidad en Maya. Evita sumar dos desenfoques.
 
-Validación: pruebas de distribución e instalación del EXE en Maya 2024.2; PNG y AVI Full HD con retrasos deliberados del renderizador; 12 fotogramas consecutivos por formato en una escena de producción de 420 mallas con rigs y deformadores, sin imágenes repetidas. Comprobados cono, penumbra, volumen, DOF y light linking. Pruebas GPU realizadas con RTX 3070; el Acer Nitro 5/RTX 3060 requiere comprobarse en ese equipo.
+Validación en Maya 2024.2 y RTX 3070: diez comprobaciones de superficie, componentes, unidades y cámaras; enfoque y selección de punto en la escena de producción; comparación de cuatro poses animadas con AA2/AA8 frente a referencia AA16; pruebas de distribución e instalador. El desenfoque continúa siendo un preview, con posibles halos, y no reproduce el bokeh completo de Blender.
 
-Para capturar a 1920×1080, usa 100 % y Render offscreen en las opciones nativas de Playblast. Instala la versión y reinicia Maya después de guardar tu trabajo. La captura espera lo necesario; no exige reproducción a tiempo real.
-
-El viewport continúa siendo experimental. La mejora interactiva usa calidad temporal reducida; no garantiza 30 FPS a resolución completa ni paridad completa con Arnold. DOF y bloom siguen siendo previews del puente. Requiere Maya 2024 y OpenGL/OpenGL Core Profile. El instalador no tiene firma de código.
+Actualiza desde Eevee > Buscar actualizaciones o instala el EXE del release y reinicia Maya después de guardar tu trabajo. No garantiza 30 FPS: conservar más muestras puede reducir la velocidad. El instalador no tiene firma de código.

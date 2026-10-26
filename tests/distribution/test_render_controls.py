@@ -33,7 +33,7 @@ class AdaptiveQuality(unittest.TestCase):
     def test_edits_use_preview_then_idle_restores_full_quality(self):
         quality=InteractionQuality();config={'adaptive_quality':True}
         preview=quality.apply(self.data(),config,now=0)
-        self.assertEqual((preview['width'],preview['height'],preview['samples']),(960,540,2))
+        self.assertEqual((preview['width'],preview['height'],preview['samples']),(960,540,16))
         full=quality.apply(self.data(),config,now=.5)
         self.assertEqual((full['width'],full['height'],full['samples']),(1920,1080,16))
         changed=self.data();changed['lights'][0]['intensity']=2
@@ -48,3 +48,7 @@ class AdaptiveQuality(unittest.TestCase):
         self.assertFalse(quality.apply(settled,{},now=1)['interactive'])
         scrub=self.data();scrub['maya_frame']=2
         self.assertTrue(quality.apply(scrub,{},now=1.01)['interactive'])
+    def test_playback_keeps_native_samples_including_aa_off(self):
+        for samples in (1,2,8,16,32,64):
+            snapshot=self.data();snapshot['samples']=samples
+            self.assertEqual(InteractionQuality().apply(snapshot,{},playing=True,now=0)['samples'],samples)

@@ -189,6 +189,10 @@ def tick():
         rebuild_depth_batches(request)
         sync_finished = time.perf_counter()
         cam = update_camera(request)
+        # The shared-depth presentation applies the physical preview in Maya.
+        # Applying Blender's DOF as well blurs the source before that pass and
+        # makes a sharply focused surface impossible to recover downstream.
+        cam.data.dof.use_dof = False
         # Offscreen drawing has no camera-object argument: Eevee still reads
         # the SpaceView3D clip range for culling, even with explicit matrices.
         state["space"].clip_start=cam.data.clip_start
@@ -291,6 +295,7 @@ def tick():
                                     "view_near":state["space"].clip_start,"view_far":state["space"].clip_end},
                    "native": request.get("native"),
                    "eevee_state": {"samples":scene.eevee.taa_samples,"shadows":scene.eevee.use_shadows,
+                                   "source_dof":cam.data.dof.use_dof,"dof_backend":"shared_depth_preview",
                                    "temporal_reprojection":scene.eevee.use_taa_reprojection,
                                    "ao":bool(native and native["ao"]),
                                    "ao_backend":"shared_depth_gpu" if gpu_transport else "eevee_fast_gi",

@@ -37,10 +37,10 @@ Para desinstalar, cierra Maya y Blender y usa **Aplicaciones instaladas de Windo
 - Luces Point, Spot, Directional y Area; intensidad, exposición, cono, penumbra, sombras y participación volumétrica por luz.
 - Light linking por objeto y vínculos de sombras desde las relaciones de Maya; editor nativo accesible desde Ajustes > Luz.
 - Controles reales del modelEditor para luces, sombras, AA, AO, texturas, material por defecto, wireframe y DOF Preview.
-- Ajustes de cámara con Focus Distance, F Stop y Focal Length. **Enfocar la selección y activar DOF** establece la distancia de la selección y activa el desenfoque de la cámara, el preview del panel y el control global de Maya. También se puede activar conservando la distancia actual.
+- Ajustes de cámara con Focus Distance, F Stop y Focal Length. **Enfocar la selección y activar DOF** enfoca la superficie visible de la malla seleccionada y activa los controles nativos necesarios. Los componentes conservan su profundidad seleccionada. **Enfocar un punto con un clic en el viewport** permite elegir un ojo o cualquier punto preciso; vuelve a la herramienta anterior después del clic. Q permite salir sin enfocar. Estos cambios admiten Undo.
 - Atmósfera Eevee finita con densidad, color, anisotropía y alcance automático/manual. Bloom de pantalla.
 - Playblast nativo sincronizado por fotograma, tanto para secuencias de imágenes como para vídeo: espera la pose evaluada y su imagen antes de capturar, aunque tarde más que el tiempo real. Probado en PNG y AVI a 1920×1080.
-- Calidad adaptativa durante edición, navegación y reproducción: reduce temporalmente el ancho a 960 píxeles y el AA a dos muestras. Al detenerse recupera la calidad configurada; el playblast usa siempre las dimensiones y calidad de captura. Se puede desactivar en Ajustes.
+- Calidad adaptativa durante edición, navegación y reproducción: reduce temporalmente el ancho a 960 píxeles y conserva las muestras AA seleccionadas en Maya, incluido AA apagado. Al detenerse recupera la resolución configurada; el playblast usa siempre las dimensiones y calidad de captura. Se puede desactivar en Ajustes. Conservar más muestras durante el movimiento tiene coste de GPU.
 - Activación del puente al elegir Eevee directamente desde el menú Renderer del viewport.
 
 Para un playblast Full HD, configura 1920×1080 y 100 % en las opciones nativas; activa **Render offscreen** si el panel visible es menor. El tamaño configurado en los ajustes interactivos no limita la captura. Si el renderizador falla o supera 120 segundos por fotograma, el puente muestra un aviso, marca los fotogramas fallidos en rojo y registra el error en `playblast.json` dentro de la sesión de diagnóstico. Maya puede conservar un archivo parcial: esa captura no es válida. Para automatizar y recibir también una excepción de Python, usa `from eevee_maya.capture import playblast` en lugar de `cmds.playblast`.
@@ -65,7 +65,7 @@ python -m unittest discover -s tests/distribution -v
 python tools/build_release.py
 ```
 
-Con `mayapy` también puedes ejecutar `tests/distribution/probe_scene_changes.py` y `probe_light_links.py`: crean escenas temporales para verificar jerarquía y vínculos, incluido Undo/Redo. `probe_native_playblast.py` se ejecuta dentro de una sesión gráfica de Maya dedicada a pruebas; crea una escena temporal y verifica imágenes/vídeo, retrasos del renderizador y captura fallida. No lo ejecutes en una sesión con trabajo sin guardar.
+Con `mayapy` también puedes ejecutar `tests/distribution/probe_scene_changes.py`, `probe_light_links.py` y `probe_focus.py`: crean escenas temporales para verificar jerarquía, vínculos y enfoque de superficies, incluidas deformaciones, unidades y escala de cámara. `probe_native_playblast.py` y `probe_focus_gui.py` se ejecutan dentro de una sesión gráfica de Maya dedicada a pruebas; crean escenas temporales para comprobar captura y controles de enfoque con Undo/Redo. No los ejecutes en una sesión con trabajo sin guardar.
 
 Los artefactos quedan en `dist/`. Para publicar una nueva actualización:
 
@@ -74,7 +74,7 @@ Los artefactos quedan en `dist/`. Para publicar una nueva actualización:
 3. Con GitHub CLI autenticado, publica una versión nueva con sus notas:
 
 ```powershell
-./tools/publish_release.ps1 -Version 0.6.6 -NotesFile ./release-notes.md
+./tools/publish_release.ps1 -Version 0.6.7 -NotesFile ./release-notes.md
 ```
 
 El script construye los artefactos, sube `main` y crea el release. No reemplaza versiones ya publicadas. Los usuarios recibirán la oferta al volver a cargar Maya o al pulsar Buscar actualizaciones. También existe el workflow manual **Publicar versión** en GitHub Actions. Cada release conserva ZIP, instalador y SHA256SUMS.txt.

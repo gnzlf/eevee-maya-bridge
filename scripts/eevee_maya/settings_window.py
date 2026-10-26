@@ -27,7 +27,7 @@ class SettingsWindow:
         cmds.checkBox(label='Calidad adaptativa al editar o reproducir',
                       value=bool(controller.engine.config.get('adaptive_quality',True)),
                       changeCommand=self.set_adaptive_quality)
-        cmds.text(label='Mientras editas usa hasta 960 píxeles y 2 muestras; al detenerte recupera la calidad elegida. El playblast conserva su resolución y muestras.',
+        cmds.text(label='Mientras editas usa hasta 960 píxeles y conserva las muestras AA de Maya. Al detenerte recupera la resolución elegida. El playblast conserva su resolución.',
                   align='left',wordWrap=True)
         cmds.text(label="Los botones de la barra de Maya y estos controles comparten estado.", align="left", wordWrap=True)
         self.lighting = cmds.optionMenu(label="Iluminación", changeCommand=self.set_lighting)
@@ -49,6 +49,8 @@ class SettingsWindow:
         camera_tab = cmds.columnLayout(adjustableColumn=True, rowSpacing=8)
         cmds.button(label='Activar desenfoque de esta cámara',command=self.enable_dof)
         cmds.button(label='Enfocar la selección y activar DOF',command=self.focus_selection)
+        cmds.button(label='Enfocar un punto con un clic en el viewport',command=self.pick_focus)
+        cmds.text(label='La selección enfoca su superficie visible. Para ojos o un punto preciso del rostro, usa el clic o selecciona sus vértices.',align='left',wordWrap=True)
         self.dof_status=cmds.text(label='',align='left',wordWrap=True)
         self.camera_column = cmds.columnLayout(adjustableColumn=True, rowSpacing=6)
         cmds.setParent(camera_tab)
@@ -126,18 +128,44 @@ class SettingsWindow:
         selected=cmds.ls(selection=True,long=True) or []
         selected=[name for name in selected if not cmds.ls(name,dag=True,type='light') and not cmds.ls(name,dag=True,type='camera')]
         if not selected:cmds.warning('Selecciona el objeto o componente que quieras enfocar');return
-        bounds=cmds.exactWorldBoundingBox(selected)
-        # xform and bounding boxes use Maya's working units; MFnCamera uses cm.
-        unit=om.MDistance.uiUnit()
-        center=om.MPoint(*[om.MDistance((bounds[i]+bounds[i+3])*.5,unit).asCentimeters() for i in range(3)])
-        selection=om.MSelectionList();selection.add(self.camera);path=selection.getDagPath(0)
-        matrix=path.inclusiveMatrix()
-        forward=om.MVector(-matrix[8],-matrix[9],-matrix[10]).normal()
-        depth=(center-om.MPoint(matrix[12],matrix[13],matrix[14]))*forward
-        if depth<=0:cmds.warning('La selección está detrás de la cámara');return
-        fn=om.MFnCamera(path);fn.focusDistance=depth
-        self.enable_dof()
-        self.controller.force=True
+        from . import focus
+        path=focus.camera_path(cmds.modelPanel(self.panel,query=True,camera=True))
+        self.focus_point(path,focus.selection_point(path,selected))
+
+    def focus_point(self,path,point):
+        from . import focus
+        distance=focus.depth(path,point)
+        if distance<=0:cmds.warning('El punto está detrás de la cámara');return
+        cmds.undoInfo(openChunk=True,chunkName='Eevee focus')
+        try:
+            value=om.MDistance(distance,om.MDistance.kCentimeters).asUnits(om.MDistance.uiUnit())
+            cmds.setAttr(path.fullPathName()+'.focusDistance',value)
+            self.enable_dof()
+        finally:cmds.undoInfo(closeChunk=True)
+
+    def pick_focus(self,*args):
+        from . import focus
+        import maya.api.OpenMayaUI as omui
+        context='eeveePickFocusContext'
+        previous=cmds.currentCtx()
+        if cmds.draggerContext(context,exists=True):cmds.deleteUI(context)
+        def pressed():
+            try:
+                panel=cmds.getPanel(underPointer=True)
+                if panel!=self.panel:
+                    cmds.warning('Haz clic en el viewport Eevee activo');return
+                x,y,_=cmds.draggerContext(context,query=True,anchorPoint=True)
+                view=omui.M3dView.getM3dViewFromModelPanel(panel)
+                origin,direction=om.MPoint(),om.MVector()
+                view.viewToWorld(int(x),int(y),origin,direction)
+                point=focus.ray_hit(origin,direction,focus.visible_meshes())
+                if point is None:cmds.warning('No hay una superficie de malla bajo ese punto');return
+                path=focus.camera_path(cmds.modelPanel(panel,query=True,camera=True))
+                self.focus_point(path,point)
+            finally:cmds.evalDeferred(lambda:cmds.setToolTo(previous))
+        cmds.draggerContext(context,pressCommand=pressed,cursor='crossHair',space='screen',undoMode='step')
+        cmds.setToolTo(context)
+        cmds.inViewMessage(amg='Haz clic sobre la superficie que quieres enfocar. Q para salir sin enfocar.',pos='midCenter',fade=True)
 
     def enable_dof(self,*args):
         camera=cmds.modelPanel(self.panel,query=True,camera=True)
