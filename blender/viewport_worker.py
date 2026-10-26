@@ -40,6 +40,7 @@ from eevee_maya.protocol import read_json, write_json
 from eevee_maya.shared_frame import SharedFrame, SharedMailbox
 from eevee_maya.gpu_share import GpuShare
 from eevee_maya.mesh_packet import records
+from eevee_maya import shadow_quality
 from scene_sync import SceneMirror, update_camera, update_effects, position_atmosphere, world_bounds
 
 parser = argparse.ArgumentParser()
@@ -231,8 +232,10 @@ def tick():
             # AO must not silently enable the separate glossy reflection tracer.
             # Route all roughnesses through Fast GI's AO-only approximation.
             scene.eevee.ray_tracing_options.trace_max_roughness=0
-        scene.eevee.shadow_resolution_scale = request.get("shadow_resolution_scale", .5)
-        scene.eevee.shadow_pool_size = "128"
+        shadow_settings = request.get('shadow_settings', {})
+        shadow_state = shadow_quality.apply(scene.eevee, {
+            'shadow_quality': shadow_settings.get('preset', 'high'),
+            'shadow_pool_size': shadow_settings.get('pool', 'auto')})
         scene.view_settings.view_transform = "AgX"
         state["space"].camera = cam
         width, height = request["width"], request["height"]
@@ -300,6 +303,7 @@ def tick():
                                     "view_near":state["space"].clip_start,"view_far":state["space"].clip_end},
                    "native": request.get("native"),
                    "eevee_state": {"samples":scene.eevee.taa_samples,"shadows":scene.eevee.use_shadows,
+                                   "shadow_quality":shadow_state,
                                    "source_dof":cam.data.dof.use_dof,"dof_backend":"shared_depth_preview",
                                    "temporal_reprojection":scene.eevee.use_taa_reprojection,
                                    "ao":bool(native and native["ao"]),
@@ -312,6 +316,8 @@ def tick():
                                    "lights":len([o for o in bpy.context.scene.objects if o.type=="LIGHT" and not o.hide_viewport]),
                                    "light_details":[{"name":o.get("maya_path",o.name),"type":o.data.type,"energy":o.data.energy,
                                                      "shadows":o.data.use_shadow,
+                                                     "shadow_angle":getattr(o.data,"angle",None),
+                                                     "shadow_radius":getattr(o.data,"shadow_soft_size",None),
                                                      "position":list(o.matrix_world.translation),"color":list(o.data.color),
                                                      "volume":o.data.volume_factor,"spot_size":getattr(o.data,"spot_size",None),
                                                      "receivers":o.light_linking.receiver_collection.name if o.light_linking.receiver_collection else None,

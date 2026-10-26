@@ -14,7 +14,7 @@ try:
 except ImportError:
     from PySide2 import QtCore
 
-from . import exporter, viewport, native_controls, capture
+from . import exporter, viewport, native_controls, capture, shadow_quality
 from .engine import Engine, ROOT, settings
 from .protocol import write_json
 from .changes import SceneChanges
@@ -37,6 +37,9 @@ class Controller:
         override.quad.frame=None
         override.has_image=False
         self.engine = Engine()
+        for key, preference in shadow_quality.PREFERENCES.items():
+            if cmds.optionVar(exists=preference):
+                self.engine.config[key] = cmds.optionVar(query=preference)
         self.engine.gpu = bool(self.engine.config.get("gpu_transport", False))
         self.force = True
         self.presented_once = False
@@ -223,6 +226,8 @@ class Controller:
         for light in data['lights']:
             light.update(links[light['name']])
         native_controls.apply(data, state)
+        # Shared by interactive frames and the strict native playblast path.
+        data['shadow_settings'] = shadow_quality.resolve(self.engine.config)
         data['maya_frame'] = cmds.currentTime(query=True)
         return data
 

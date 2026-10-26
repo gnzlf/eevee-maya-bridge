@@ -5,6 +5,7 @@ import unittest
 ROOT=Path(__file__).resolve().parents[2];sys.path.insert(0,str(ROOT/'scripts'))
 from eevee_maya.lighting import expand_spot_profiles
 from eevee_maya.quality import InteractionQuality
+from eevee_maya import shadow_quality
 
 
 class SpotProfiles(unittest.TestCase):
@@ -27,6 +28,16 @@ class SpotProfiles(unittest.TestCase):
 
 
 class AdaptiveQuality(unittest.TestCase):
+    def test_full_shadow_quality_survives_adaptive_preview(self):
+        snapshot=self.data();snapshot['shadow_settings']=shadow_quality.resolve({'shadow_quality':'ultra'})
+        result=InteractionQuality().apply(snapshot,{},playing=True,now=0)
+        self.assertEqual(result['width'],960)
+        self.assertEqual(result['shadow_settings']['resolution'],1)
+        self.assertEqual(result['shadow_settings']['rays'],4)
+
+    def test_invalid_persisted_shadow_preferences_fall_back(self):
+        settings=shadow_quality.resolve({'shadow_quality':'obsolete','shadow_pool_size':'99999'})
+        self.assertEqual(settings,shadow_quality.resolve({}))
     def data(self):
         return {'camera':{'focus_distance':20},'lights':[{'intensity':1}], 'effects':{'fog':True},
                 'native':{'aa_samples':16},'width':1920,'height':1080,'samples':16}

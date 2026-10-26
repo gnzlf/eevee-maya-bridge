@@ -1,12 +1,12 @@
-Navegación de cámara con menos espera y resolución temporal configurable.
+Calidad de sombras configurable desde Maya.
 
-- El puente también consume y envía imágenes durante el dibujo nativo del panel. Evita depender exclusivamente del temporizador Qt cuando Maya está ocupado con una herramienta de navegación y evita refrescos recursivos.
-- El volumen conserva una caché de los límites mundiales de las mallas. Al navegar recalcula su alcance con operaciones vectorizadas; invalida la caché ante cambios de puntos, matrices, visibilidad o reconstrucción de escena.
-- Nuevo control en Ajustes > Viewport: «Navegación de cámara más rápida» y «Ancho temporal al navegar». Con calidad adaptativa activa, utiliza 640 píxeles por defecto mientras navegas y recupera la resolución configurada al detenerte. Puedes elegir 320–1920 o desactivar el modo.
-- Conserva las muestras AA de Maya y los efectos. La reproducción y el scrubbing de cámaras animadas conservan su política de calidad; el playblast no utiliza esta reducción de navegación y captura cada fotograma a su tamaño solicitado.
+- Nueva pestaña Ajustes > Sombras: Baja (25%), Media (50%), Alta (100%, predeterminada) y Ultra (100% con más muestras para sombras suaves). El visor anterior estaba fijo al 50% y 128 MB.
+- Memoria automática de 128 / 256 / 512 / 1024 MB según el nivel, o selección manual de 128–2048 MB. Más memoria ayuda cuando muchas luces llenan el presupuesto de sombras; por sí sola no aumenta su nitidez. Eevee usa mapas virtuales, sin equivalencia fija a mapas de 2K/4K.
+- Los cambios se aplican en vivo sin reiniciar Blender ni reconstruir las mallas. Se guardan en las preferencias de Maya y se respetan también en el playblast PNG/AVI. La calidad adaptativa conserva los ajustes de sombras; su resolución temporal de imagen sigue limitando el detalle visible al navegar.
+- El botón nativo de sombras de Maya y los controles por luz siguen activando o apagando las sombras. Se traduce el ángulo de sombra de Directional a Eevee, y Ajustes > Luz muestra los controles nativos de radio, ángulo y activación de sombras.
 
-En una comparación controlada con la misma sesión, pose y cámara de una escena de 420 mallas, AA8 y efectos activos, la navegación pasó de unas 11 a 13 actualizaciones/s. El percentil 95 de demora bajó de 157 a 110 ms; la mediana quedó similar (82 frente a 88 ms). La comparación usa sincronización por Qt y preview de 960 píxeles frente al nuevo dibujo nativo y preview de 640; ambos conservan AA y efectos. La caché volumétrica estaba activa en ambos modos. Las pruebas iniciales dieron tiempos más variables; estas cifras no garantizan mejoras iguales en todos los equipos ni equivalen a Full HD a 30 FPS. Equipo de prueba: Maya 2024.2 y RTX 3070.
+Alta y Ultra consumen más tiempo de GPU y memoria; no garantizan 30 FPS. La luz por defecto de Maya no proyecta sombras: usa una luz real con sombras activadas.
 
-Validación: pruebas de distribución e instalador; comprobación de actualizaciones mediante dibujo nativo con el temporizador Qt detenido; comparación de límites volumétricos; regresiones de controles ópticos y playblast PNG/AVI Full HD.
+Validación en Maya 2024: comparación de imágenes con sombras finas a 1920 píxeles, cambios de nivel en vivo, controles nativos y ángulo de Directional, playblast PNG/AVI a 1920×1080 con sombras Ultra, escena de producción de 420 mallas con deformaciones entre poses y pruebas de distribución e instalación.
 
-Instala desde Eevee > Buscar actualizaciones y reinicia Maya después de guardar tu trabajo. El viewport y su DOF continúan siendo experimentales. El instalador no tiene firma de código.
+Instala desde Eevee > Buscar actualizaciones y reinicia Maya después de guardar tu trabajo. También puedes descargar el instalador de este release. El viewport y su DOF continúan siendo experimentales. El instalador no tiene firma de código.

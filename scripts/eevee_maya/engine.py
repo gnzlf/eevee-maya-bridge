@@ -19,7 +19,8 @@ def settings():
     defaults = {"blender": r"C:\Program Files\Blender Foundation\Blender 5.2\blender.exe",
                 "max_width": 640, "samples": 1, "interval_ms": 1, "studio": False,
                 "backend": "viewport", "adaptive_quality": True, "interaction_width": 960,
-                "fast_navigation": True, "navigation_width": 640}
+                "fast_navigation": True, "navigation_width": 640,
+                "shadow_quality": "high", "shadow_pool_size": "auto"}
     path = ROOT / "config.json"
     if path.exists():
         defaults.update(read_json(path))

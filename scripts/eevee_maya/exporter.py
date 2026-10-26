@@ -205,6 +205,7 @@ def lights():
                                "volume": bool(attr(name, "eeveeVolume", True)), "volume_factor": attr(name, "eeveeVolumeFactor", 1),
                                "shadows": bool(attr(name, "useDepthMapShadows", False) or attr(name, "useRayTraceShadows", False)),
                                "radius": attr(name, "lightRadius", 0),
+                               "angle": math.radians(attr(name, "lightAngle", 0)),
                                "size_x": 2 * math.sqrt(sum(v*v for v in matrix[:3])),
                                "size_y": 2 * math.sqrt(sum(v*v for v in matrix[4:7]))})
         iterator.next()

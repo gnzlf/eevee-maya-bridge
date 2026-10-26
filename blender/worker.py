@@ -16,6 +16,7 @@ ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT / "scripts"))
 from eevee_maya.protocol import read_json, write_json
 from eevee_maya.lighting import expand_spot_profiles
+from eevee_maya import shadow_quality
 
 # Maya and Blender cameras both look along local -Z. Rotate the world Y-up -> Z-up.
 CONVERSION = Matrix(((1, 0, 0, 0), (0, 0, -1, 0), (0, 1, 0, 0), (0, 0, 0, 1)))
@@ -168,6 +169,8 @@ def apply_light(obj, spec, previous=None):
         data.spot_blend=max(0,min(1,(math.cos(inner/2)-math.cos(outer/2))/max(1e-8,1-math.cos(outer/2))))
     if data.type in ("POINT", "SPOT") and changed("radius"):
         data.shadow_soft_size = max(0, spec.get("radius", 0))
+    if data.type == "SUN" and changed("angle"):
+        data.angle = max(0, min(math.pi, spec.get("angle", 0)))
     if data.type == "AREA" and previous is None:
         data.shape, data.size, data.size_y = "RECTANGLE", 2, 2
     if changed("matrix"):obj.matrix_world = transform(spec["matrix"])
@@ -285,6 +288,10 @@ def apply_camera(cam,spec):
 
 
 def render(request, output):
+    shadow_settings = request.get('shadow_settings', {})
+    shadow_quality.apply(bpy.context.scene.eevee, {
+        'shadow_quality': shadow_settings.get('preset', 'high'),
+        'shadow_pool_size': shadow_settings.get('pool', 'auto')})
     scene = bpy.context.scene
     cam=apply_camera(scene.camera,request["camera"])
     scene.render.engine = "BLENDER_EEVEE"

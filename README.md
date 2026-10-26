@@ -37,6 +37,8 @@ Para desinstalar, cierra Maya y Blender y usa **Aplicaciones instaladas de Windo
 - Luces Point, Spot, Directional y Area; intensidad, exposición, cono, penumbra, sombras y participación volumétrica por luz.
 - Light linking por objeto y vínculos de sombras desde las relaciones de Maya; editor nativo accesible desde Ajustes > Luz.
 - Controles reales del modelEditor para luces, sombras, AA, AO, texturas, material por defecto, wireframe y DOF Preview.
+- **Ajustes > Sombras** permite elegir Baja (25%), Media (50%), Alta (100%, predeterminada) o Ultra (100% con más muestras de sombras suaves). Antes el visor estaba fijo al 50% y 128 MB. La memoria automática usa 128 / 256 / 512 / 1024 MB según el nivel; también puedes elegir 128–2048 MB manualmente para escenas con muchas luces. Eevee usa mapas virtuales: estos porcentajes no equivalen a un tamaño fijo de 2K/4K. Más memoria por sí sola no afila los bordes. Más calidad cuesta GPU y VRAM.
+- La calidad de sombras se conserva durante la navegación y el playblast. El ancho temporal del preview todavía limita el detalle visible durante el movimiento. Los ajustes de sombras se guardan en las preferencias de Maya. El ángulo de sombra de Directional y el radio de Point/Spot controlan la suavidad desde Ajustes > Luz; el botón nativo de sombras y los interruptores por luz conservan el control de activación.
 - Ajustes de cámara con Focus Distance, F Stop y Focal Length. **Enfocar la selección y activar DOF** enfoca la superficie visible de la malla seleccionada y activa los controles nativos necesarios. Los componentes conservan su profundidad seleccionada. **Enfocar un punto con un clic en el viewport** permite elegir un ojo o cualquier punto preciso; vuelve a la herramienta anterior después del clic. Q permite salir sin enfocar. Estos cambios admiten Undo.
 - Atmósfera Eevee finita con densidad, color, anisotropía y alcance automático/manual. Bloom de pantalla.
 - Playblast nativo sincronizado por fotograma, tanto para secuencias de imágenes como para vídeo: espera la pose evaluada y su imagen antes de capturar, aunque tarde más que el tiempo real. Probado en PNG y AVI a 1920×1080.
@@ -67,7 +69,7 @@ python -m unittest discover -s tests/distribution -v
 python tools/build_release.py
 ```
 
-Con `mayapy` también puedes ejecutar `tests/distribution/probe_scene_changes.py`, `probe_light_links.py` y `probe_focus.py`: crean escenas temporales para verificar jerarquía, vínculos y enfoque de superficies, incluidas deformaciones, unidades y escala de cámara. `probe_native_playblast.py`, `probe_focus_gui.py` y `probe_navigation_callback.py` se ejecutan dentro de una sesión gráfica de Maya dedicada a pruebas; crean escenas temporales para comprobar captura, enfoque y sincronización por dibujo nativo con el temporizador Qt detenido. No los ejecutes en una sesión con trabajo sin guardar. `probe_volume_bounds.py` se ejecuta con Blender en background para comprobar el cálculo de límites de la atmósfera.
+Con `mayapy` también puedes ejecutar `tests/distribution/probe_scene_changes.py`, `probe_light_links.py` y `probe_focus.py`: crean escenas temporales para verificar jerarquía, vínculos y enfoque de superficies, incluidas deformaciones, unidades y escala de cámara. `probe_native_playblast.py`, `probe_focus_gui.py`, `probe_navigation_callback.py` y `probe_shadow_quality.py` se ejecutan dentro de una sesión gráfica de Maya dedicada a pruebas; crean escenas temporales para comprobar captura, enfoque, calidad de sombras y sincronización por dibujo nativo con el temporizador Qt detenido. No los ejecutes en una sesión con trabajo sin guardar. `probe_volume_bounds.py` se ejecuta con Blender en background para comprobar el cálculo de límites de la atmósfera.
 
 Los artefactos quedan en `dist/`. Para publicar una nueva actualización:
 
@@ -76,7 +78,7 @@ Los artefactos quedan en `dist/`. Para publicar una nueva actualización:
 3. Con GitHub CLI autenticado, publica una versión nueva con sus notas:
 
 ```powershell
-./tools/publish_release.ps1 -Version 0.6.8 -NotesFile ./release-notes.md
+./tools/publish_release.ps1 -Version 0.6.9 -NotesFile ./release-notes.md
 ```
 
 El script construye los artefactos, sube `main` y crea el release. No reemplaza versiones ya publicadas. Los usuarios recibirán la oferta al volver a cargar Maya o al pulsar Buscar actualizaciones. También existe el workflow manual **Publicar versión** en GitHub Actions. Cada release conserva ZIP, instalador y SHA256SUMS.txt.

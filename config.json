@@ -7,5 +7,7 @@
   "studio": false,
   "backend": "viewport",
   "gpu_transport": true,
-  "pipeline": true
+  "pipeline": true,
+  "shadow_quality": "high",
+  "shadow_pool_size": "auto"
 }

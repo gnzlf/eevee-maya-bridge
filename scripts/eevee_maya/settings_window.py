@@ -1,7 +1,7 @@
 """Maya-styled settings editing the real viewport attributes, not duplicate switches."""
 import maya.cmds as cmds
 import maya.api.OpenMaya as om
-from . import native_controls
+from . import native_controls, shadow_quality
 from .ui import QtCore
 
 WINDOW = "eeveeViewportSettings"
@@ -52,6 +52,26 @@ class SettingsWindow:
         self.attribute("hardwareRenderingGlobals.multiSampleCount", "Muestras AA")
         cmds.text(label="El botón AA de Maya controla muestras de Eevee. Más muestras reducen ruido y pueden bajar los FPS.", align="left", wordWrap=True)
         cmds.setParent(tabs)
+        shadow_tab = cmds.columnLayout(adjustableColumn=True, rowSpacing=10)
+        self.shadow_enabled = cmds.checkBox(label='Sombras del viewport de Maya',
+                                            changeCommand=lambda value:self.set_panel('shadows', value))
+        values = shadow_quality.resolve(controller.engine.config)
+        self.shadow_quality = cmds.optionMenu(label='Calidad de sombras', changeCommand=self.set_shadow_quality)
+        for label, key in shadow_quality.LABELS: cmds.menuItem(label=label)
+        cmds.optionMenu(self.shadow_quality, edit=True,
+                        value=next(label for label,key in shadow_quality.LABELS if key==values['preset']))
+        self.shadow_pool = cmds.optionMenu(label='Memoria para sombras', changeCommand=self.set_shadow_pool)
+        cmds.menuItem(label='Automática según calidad')
+        for pool in shadow_quality.POOLS: cmds.menuItem(label=pool+' MB')
+        pool = str(controller.engine.config.get('shadow_pool_size', 'auto'))
+        cmds.optionMenu(self.shadow_pool, edit=True,
+                        value=pool+' MB' if pool in shadow_quality.POOLS else 'Automática según calidad')
+        cmds.text(label='Alta usa el 100% de resolución. Ultra añade más muestras para mejorar las sombras suaves. El cambio se aplica al viewport y al playblast.', align='left', wordWrap=True)
+        cmds.text(label='Más calidad cuesta tiempo de GPU. Más memoria permite mantener sombras detalladas con muchas luces; por sí sola no afila sus bordes. Automática usa 128 / 256 / 512 / 1024 MB según calidad.', align='left', wordWrap=True)
+        cmds.text(label='Los ajustes se conservan al reiniciar Maya. Para ver todo el detalle al navegar, sube el ancho temporal en Viewport o desactiva la calidad adaptativa.', align='left', wordWrap=True)
+        cmds.button(label='Editar la luz seleccionada', command=lambda *_:cmds.tabLayout(tabs, edit=True, selectTab=light_tab))
+        cmds.text(label='Activa sombras en la propia luz Maya. El radio o tamaño de la luz determina la suavidad de sus sombras. La luz por defecto del visor no proyecta sombras.', align='left', wordWrap=True)
+        cmds.setParent(tabs)
         camera_tab = cmds.columnLayout(adjustableColumn=True, rowSpacing=8)
         cmds.button(label='Activar desenfoque de esta cámara',command=self.enable_dof)
         cmds.button(label='Enfocar la selección y activar DOF',command=self.focus_selection)
@@ -90,7 +110,7 @@ class SettingsWindow:
         cmds.optionMenu(menu, edit=True, value=str(controller.engine.config["max_width"]))
         cmds.text(label="La iluminación admite Point, Spot, Directional y Area. La respuesta de luz y materiales puede diferir de Viewport 2.0 y Arnold.", align="left", wordWrap=True)
         cmds.text(label="Light linking por objeto y sombras. Los vínculos por caras, motion blur y luces especiales de Arnold siguen sin soporte.", align="left", wordWrap=True)
-        cmds.tabLayout(tabs, edit=True, tabLabel=((viewport_tab,"Viewport"),(camera_tab,"Cámara"),(light_tab,"Luz"),(effects_tab,"Eevee")))
+        cmds.tabLayout(tabs, edit=True, tabLabel=((viewport_tab,"Viewport"),(shadow_tab,"Sombras"),(camera_tab,"Cámara"),(light_tab,"Luz"),(effects_tab,"Eevee")))
         self.timer.timeout.connect(self.refresh)
         self.timer.start(250)
         cmds.scriptJob(uiDeleted=[self.window,self.timer.stop],runOnce=True)
@@ -133,6 +153,18 @@ class SettingsWindow:
     def set_navigation(self,key,value):
         self.controller.engine.config[key]=value
         self.controller.force=True
+
+    def set_shadow_quality(self, label):
+        key = next(key for text,key in shadow_quality.LABELS if text==label)
+        self.set_shadow_preference('shadow_quality', key)
+
+    def set_shadow_pool(self, label):
+        self.set_shadow_preference('shadow_pool_size', label.split()[0] if label.endswith(' MB') else 'auto')
+
+    def set_shadow_preference(self, key, value):
+        self.controller.engine.config[key] = value
+        cmds.optionVar(stringValue=(shadow_quality.PREFERENCES[key], value))
+        self.controller.force = True
 
     def focus_selection(self,*args):
         selected=cmds.ls(selection=True,long=True) or []
@@ -200,6 +232,7 @@ class SettingsWindow:
             cmds.deleteUI(self.window)
             return
         state=native_controls.read(self.panel)
+        cmds.checkBox(self.shadow_enabled,edit=True,value=state['shadows'])
         if cmds.optionMenu(self.quality,query=True,value=True)!=str(self.controller.engine.config["max_width"]):
             cmds.optionMenu(self.quality,edit=True,value=str(self.controller.engine.config["max_width"]))
         for flag,control in self.widgets.items(): cmds.checkBox(control,edit=True,value=state[flag])
@@ -240,6 +273,8 @@ class SettingsWindow:
                                    ("decayRate","Decaimiento Maya"),("centerOfIllumination","Referencia de decaimiento"),
                                    ("coneAngle","Ángulo de cono"),("penumbraAngle","Penumbra"),("dropoff","Dropoff"),
                                    ("emitDiffuse","Emitir difuso"),("emitSpecular","Emitir especular"),
+                                   ("lightRadius","Radio de sombra"),("lightAngle","Ángulo de sombra"),
+                                   ("useRayTraceShadows","Proyectar sombras de trazado"),
                                    ("useDepthMapShadows","Sombras de mapa"),("eeveeVolume","Volumétrica Eevee"),
                                    ("eeveeVolumeFactor","Intensidad de volumen")):
                     if cmds.nodeType(light)=="directionalLight" and attr in ("decayRate","centerOfIllumination"):continue

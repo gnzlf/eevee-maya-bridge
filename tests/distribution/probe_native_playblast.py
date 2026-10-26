@@ -9,12 +9,16 @@ root=Path(__file__).resolve().parents[2]
 if 'regression_profile' not in cmds.internalVar(userAppDir=True):raise RuntimeError('Dedicated regression Maya required')
 ui.stop();cmds.file(new=True,force=True)
 obj=cmds.polyCube()[0]
+receiver=cmds.polyPlane(width=20,height=12,axis=(0,0,1))[0];cmds.setAttr(receiver+'.translateZ',-3)
+sun=cmds.directionalLight(intensity=1.5);cmds.setAttr(sun+'.useDepthMapShadows',True)
+cmds.setAttr(cmds.listRelatives(sun,parent=True)[0]+'.rotate',-20,-35,0,type='double3')
 for frame,x in ((1,-3),(2,0),(3,3)):cmds.setKeyframe(obj,attribute='translateX',time=frame,value=x)
 cmds.setAttr('persp.translate',0,0,16,type='double3');cmds.setAttr('persp.rotate',0,0,0,type='double3')
 cmds.modelPanel('modelPanel4',edit=True,camera='persp')
-cmds.modelEditor('modelPanel4',edit=True,displayLights='default',displayAppearance='smoothShaded',grid=False)
+cmds.modelEditor('modelPanel4',edit=True,displayLights='all',shadows=True,displayAppearance='smoothShaded',grid=False)
 cmds.currentTime(1);cmds.select(clear=True)
 c=ui.attach('modelPanel4');c.engine.config['max_width']=320
+c.engine.config.update(shadow_quality='ultra',shadow_pool_size='512')
 out=root/'diagnostics'/'native-playblast';out.mkdir(exist_ok=True)
 state={'deadline':time.monotonic()+90}
 def avi_chunks(data,start=12,end=None):
@@ -46,7 +50,10 @@ def run():
                                 startTime=1,endTime=3,filename=str(out/label),viewer=False,forceOverwrite=True,
                                 percent=100,widthHeight=size,showOrnaments=False,offScreen=True,editorPanelName=c.panel)
             trace=list(c.capture_records)
-            result={'returned':path,'trace':trace,'seconds':time.monotonic()-start,'capture_error':c.capture_error}
+            result={'returned':path,'trace':trace,'seconds':time.monotonic()-start,'capture_error':c.capture_error,
+                    'shadow_quality':c.engine.last_response['eevee_state']['shadow_quality']}
+            checks[label+'_shadow_quality_preserved']=result['shadow_quality']=={'preset':'ultra','resolution':1.0,'rays':4,'steps':16,'pool':'512'}
+            checks[label+'_real_light_shadows']=c.engine.last_response['eevee_state']['light_details'][0]['shadows']
             checks[label+'_exact_poses']=[r['maya_frame'] for r in trace]==[1,2,3]
             checks[label+'_exact_size']=all((r['width'],r['height'])==size for r in trace)
             checks[label+'_waited_for_frames']=result['seconds']>=.44
