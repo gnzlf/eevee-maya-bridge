@@ -18,7 +18,7 @@ ROOT = Path(__file__).resolve().parents[2]
 def settings():
     defaults = {"blender": r"C:\Program Files\Blender Foundation\Blender 5.2\blender.exe",
                 "max_width": 640, "samples": 1, "interval_ms": 1, "studio": False,
-                "backend": "viewport"}
+                "backend": "viewport", "adaptive_quality": True, "interaction_width": 960}
     path = ROOT / "config.json"
     if path.exists():
         defaults.update(read_json(path))
@@ -82,6 +82,9 @@ class Engine:
                                         creationflags=getattr(subprocess, "CREATE_NO_WINDOW", 0))
         self.started = time.monotonic()
         self.sent_id = self.received_id = 0
+        self.last_response = {}
+        self.frame = self.image = None
+        self.history.clear()
         self.signature = None
         self.ready = False
         self.status = "Iniciando Blender / Eevee..."
@@ -127,8 +130,9 @@ class Engine:
         self.received_id = response["id"]
         self.last_response = response
         self.history.append(dict(response))
-        self.status = "Eevee | %d mallas | %.1f ms | fotograma %d" % (
-            response["meshes"], response["seconds"] * 1000, response["id"])
+        self.status = "Eevee %d×%d (%s) | %d mallas | %.1f ms" % (
+            response['width'],response['height'],'previa al editar' if response.get('interactive') else 'calidad completa',
+            response["meshes"], response["seconds"] * 1000)
         return True
 
     @property

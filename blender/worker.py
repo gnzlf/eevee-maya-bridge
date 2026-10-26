@@ -15,6 +15,7 @@ from mathutils import Matrix, Vector
 ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT / "scripts"))
 from eevee_maya.protocol import read_json, write_json
+from eevee_maya.lighting import expand_spot_profiles
 
 # Maya and Blender cameras both look along local -Z. Rotate the world Y-up -> Z-up.
 CONVERSION = Matrix(((1, 0, 0, 0), (0, 0, -1, 0), (0, 1, 0, 0), (0, 0, 0, 1)))
@@ -180,32 +181,6 @@ def create_light(spec):
     bpy.context.scene.collection.objects.link(obj)
     apply_light(obj, spec)
     return obj
-
-
-def expand_spot_profiles(lights):
-    """Approximate cos(theta)^dropoff without changing the cone or penumbra.
-
-    Eevee has no light shader nodes. Positive nested spots approximate the
-    angular curve; their energy sums to the source intensity on the axis.
-    """
-    result=[]
-    for spec in lights:
-        dropoff=max(0,spec.get('dropoff',0))
-        if spec['kind']!='spotLight' or dropoff<=.001:
-            result.append(spec);continue
-        cone=max(.001,min(math.pi-.001,spec['cone_angle']))
-        inner=max(0,cone+2*min(0,spec.get('penumbra',0)))
-        edge=max(0,math.cos(inner*.5))**dropoff
-        result.append(dict(spec,intensity=spec['intensity']*edge,maya_source=spec['name']))
-        if 1-edge<.00001:continue
-        weight=(1-edge)/6
-        for i in range(6):
-            outer=2*math.acos((edge+i*weight)**(1/dropoff))
-            inner_angle=2*math.acos(min(1,edge+(i+1)*weight)**(1/dropoff))
-            result.append(dict(spec,name=spec['name']+'::EeveeDropoff'+str(i),maya_source=spec['name'],
-                               intensity=spec['intensity']*weight,cone_angle=outer,
-                               penumbra=(inner_angle-outer)*.5,dropoff=0))
-    return result
 
 
 def build_scene(request):

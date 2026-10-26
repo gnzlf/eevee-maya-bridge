@@ -24,6 +24,11 @@ class SettingsWindow:
         self.status = cmds.text(label="", align="left", height=22)
         tabs = cmds.tabLayout(innerMarginWidth=8, innerMarginHeight=8)
         viewport_tab = cmds.columnLayout(adjustableColumn=True, rowSpacing=6)
+        cmds.checkBox(label='Calidad adaptativa al editar o reproducir',
+                      value=bool(controller.engine.config.get('adaptive_quality',True)),
+                      changeCommand=self.set_adaptive_quality)
+        cmds.text(label='Mientras editas usa hasta 960 píxeles y 2 muestras; al detenerte recupera la calidad elegida. El playblast conserva su resolución y muestras.',
+                  align='left',wordWrap=True)
         cmds.text(label="Los botones de la barra de Maya y estos controles comparten estado.", align="left", wordWrap=True)
         self.lighting = cmds.optionMenu(label="Iluminación", changeCommand=self.set_lighting)
         self.light_modes = [("Por defecto", "default"), ("Todas las luces", "all"), ("Seleccionadas", "active"), ("Conjunto fijado", "selected"), ("Iluminación plana", "flat"), ("Sin luces", "none")]
@@ -42,7 +47,9 @@ class SettingsWindow:
         cmds.text(label="El botón AA de Maya controla muestras de Eevee. Más muestras reducen ruido y pueden bajar los FPS.", align="left", wordWrap=True)
         cmds.setParent(tabs)
         camera_tab = cmds.columnLayout(adjustableColumn=True, rowSpacing=8)
-        cmds.button(label='Enfocar la selección',command=self.focus_selection)
+        cmds.button(label='Activar desenfoque de esta cámara',command=self.enable_dof)
+        cmds.button(label='Enfocar la selección y activar DOF',command=self.focus_selection)
+        self.dof_status=cmds.text(label='',align='left',wordWrap=True)
         self.camera_column = cmds.columnLayout(adjustableColumn=True, rowSpacing=6)
         cmds.setParent(camera_tab)
         cmds.text(label="Se usan los atributos de la cámara de Maya. El desenfoque sigue siendo un preview del puente y puede mostrar halos en siluetas.", align="left", wordWrap=True)
@@ -111,6 +118,10 @@ class SettingsWindow:
         self.controller.force=True
         self.refresh()
 
+    def set_adaptive_quality(self, value):
+        self.controller.engine.config['adaptive_quality'] = bool(value)
+        self.controller.force = True
+
     def focus_selection(self,*args):
         selected=cmds.ls(selection=True,long=True) or []
         selected=[name for name in selected if not cmds.ls(name,dag=True,type='light') and not cmds.ls(name,dag=True,type='camera')]
@@ -125,7 +136,18 @@ class SettingsWindow:
         depth=(center-om.MPoint(matrix[12],matrix[13],matrix[14]))*forward
         if depth<=0:cmds.warning('La selección está detrás de la cámara');return
         fn=om.MFnCamera(path);fn.focusDistance=depth
+        self.enable_dof()
         self.controller.force=True
+
+    def enable_dof(self,*args):
+        camera=cmds.modelPanel(self.panel,query=True,camera=True)
+        selection=om.MSelectionList();selection.add(camera);path=selection.getDagPath(0)
+        if path.node().hasFn(om.MFn.kTransform):path.extendToShape()
+        cmds.setAttr(path.fullPathName()+'.depthOfField',True)
+        cmds.modelEditor(self.panel,edit=True,depthOfFieldPreview=True)
+        cmds.setAttr('hardwareRenderingGlobals.renderDepthOfField',True)
+        self.controller.force=True
+        self.refresh()
 
     @staticmethod
     def open_light_linking(*args):
@@ -150,6 +172,16 @@ class SettingsWindow:
         selection=om.MSelectionList(); selection.add(camera); path=selection.getDagPath(0)
         if path.node().hasFn(om.MFn.kTransform): path.extendToShape()
         camera=path.fullPathName()
+        fn=om.MFnCamera(path)
+        if not fn.isDepthOfField:
+            dof_text='DOF apagado en la cámara. F Stop no desenfoca hasta activarlo.'
+        elif not state['depthOfFieldPreview']:
+            dof_text='DOF apagado en la vista previa del panel.'
+        elif not state['render_dof']:
+            dof_text='DOF apagado en los ajustes globales del viewport.'
+        else:
+            dof_text='DOF activo · enfoque %.2f cm · F Stop %.2f' % (fn.focusDistance,fn.fStop)
+        cmds.text(self.dof_status,edit=True,label=dof_text)
         if camera!=self.camera:
             for child in cmds.columnLayout(self.camera_column,query=True,childArray=True) or []: cmds.deleteUI(child)
             old=cmds.setParent(query=True); cmds.setParent(self.camera_column)

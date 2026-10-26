@@ -12,6 +12,8 @@ class LightLinks:
         self.checked=0
         self.callbacks=[om.MDGMessage.addConnectionCallback(self.connection_changed)]
         self.callbacks.append(om.MEventMessage.addEventCallback('lightLinkingChanged',self.mark))
+        for event in ('Undo','Redo'):
+            self.callbacks.append(om.MEventMessage.addEventCallback(event,self.mark))
 
     def mark(self,*args):
         self.dirty=True
@@ -25,8 +27,9 @@ class LightLinks:
 
     def read(self,mesh_names,light_names):
         key=(tuple(mesh_names),tuple(light_names))
-        # The periodic refresh also covers renames and Undo/Redo of memberships.
-        if not self.dirty and key==self.key and time.monotonic()-self.checked<2:
+        # Connection/link/Undo/Redo callbacks cover memberships; changed paths
+        # alter the key. Do not re-query every object periodically while dragging.
+        if not self.dirty and key==self.key:
             return self.result
         links=render.MLightLinks()
         links.parseLinks(om.MObject(),False,None,True)

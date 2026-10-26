@@ -280,6 +280,7 @@ def tick():
         if not gpu_transport:
             shared.write(request["id"], width, height, pixels, depth, seconds)
         response = {"id": request["id"], "seconds": seconds,
+                   "interactive":bool(request.get("interactive",False)),
                    "color_audit":audit,
                    "engine": "BLENDER_EEVEE_VIEWPORT", "transport": "gpu_shared_texture" if gpu_transport else "shared_memory",
                    "meshes": len(mirror.objects), "scene_rebuilds": mirror.rebuilds,

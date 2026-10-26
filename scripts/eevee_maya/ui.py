@@ -14,12 +14,14 @@ try:
 except ImportError:
     from PySide2 import QtCore
 
-from . import exporter, viewport, native_controls
+from . import exporter, viewport, native_controls, capture
 from .engine import Engine, ROOT, settings
 from .protocol import write_json
 from .changes import SceneChanges
 from .scene_stream import SceneStream
 from .light_links import LightLinks
+from .quality import InteractionQuality
+from .mesh_packet import records
 
 WINDOW = "eeveeBridgeWindow"
 MENU = "eeveeBridgeMenu"
@@ -41,6 +43,7 @@ class Controller:
         self.scene_stream = None
         self.material_specs = []
         self.timings = {}
+        self.quality = InteractionQuality()
         self.changes = SceneChanges()
         self.light_links = LightLinks()
         self.mesh_names = []
@@ -50,15 +53,21 @@ class Controller:
         self.waiting_for_view = False
         self.missing_view_since = None
         self.suspended = False
+        self.capture_active = False
+        self.capture_key = None
+        self.capture_records = []
+        self.capture_error = None
+        self.capture_syncing = False
         self.timer = QtCore.QTimer()
         self.timer.timeout.connect(self.tick)
         # Use the later time-change callback; extraction still explicitly evaluates output meshes.
-        self.playback_callback = om.MDGMessage.addForceUpdateCallback(self.tick)
+        self.playback_callback = om.MDGMessage.addForceUpdateCallback(self.time_changed)
+        self.pre_render_callback = omui.MUiMessage.add3dViewPreRenderMsgCallback(panel, self.before_draw)
         self.engine.start()
         self.timer.start(int(self.engine.config["interval_ms"]))
 
     def tick(self, *args):
-        if self.in_tick:
+        if self.in_tick or self.capture_syncing or capture.active():
             return
         if not cmds.modelPanel(self.panel, exists=True):
             stop()
@@ -109,6 +118,11 @@ class Controller:
             if self.presented_once and cmds.modelEditor(self.panel,query=True,rendererOverrideName=True)!=viewport.NAME:
                 stop()
                 return
+            received = self.engine.poll()
+            # While the renderer is busy, avoid thousands of Maya commands per
+            # second just to read the same controls. Always poll the IPC first.
+            if not received and not self.engine.available:
+                return
             state = native_controls.read(self.panel)
             self.engine.playing = self.changes.playing
             override = viewport.register()
@@ -121,7 +135,7 @@ class Controller:
                 override.gpu_image.frame = None
                 override.has_image = False
                 if self.engine.shared: self.engine.shared.acknowledge(held_id)
-            if self.engine.poll():
+            if received:
                 if not self.presented_once:
                     # Opening a scene can queue Maya's panel-state restoration
                     # after attach(). Bind when the first real frame is ready.
@@ -147,50 +161,12 @@ class Controller:
                 aspect = max(1, view.portWidth()) / float(max(1, view.portHeight()))
                 width = max(64, min(1920, int(self.engine.config["max_width"])))
                 height = max(64, min(1920, int(width / aspect)))
-                if self.changes.reconnect:
-                    self.changes.refresh_callbacks()
-                if self.changes.material_dirty and not self.changes.structural:
-                    # Maya also dirties shaders when switching texture display. Only actual
-                    # translated material changes require rebuilding Blender's scene.
-                    self.changes.structural = any(not cmds.objExists(spec["name"]) or
-                                                  exporter.material(spec["name"]) != spec
-                                                  for spec in self.material_specs)
-                    self.changes.material_dirty = False
-                if self.changes.structural or not self.engine.shared or not self.scene_stream:
-                    data = exporter.snapshot(camera, width, height,
-                                             int(self.engine.config["samples"]),
-                                             bool(self.engine.config["studio"]), binary=bool(self.engine.shared))
-                    self.material_specs = data["materials"]
-                    self.mesh_names = [mesh["name"] for mesh in data["meshes"]]
-                    self.changes.material_dirty = False
-                    if self.engine.shared:
-                        if self.scene_stream:
-                            self.scene_stream.close()
-                        self.scene_stream = SceneStream([mesh["name"] for mesh in data["meshes"]])
-                        data["mesh_delta"] = self.scene_stream.update(initial=True)
-                    self.changes.structural = False
-                    self.changes.dirty = False
-                else:
-                    data = {"protocol": 1, "camera": exporter.camera(camera, width, height),
-                            "width": width, "height": height,
-                            "samples": int(self.engine.config["samples"]), "effects": exporter.effects()}
-                    # Requesting another image (quality, camera, light/effect
-                    # settings) does not mean every mesh must be evaluated.
-                    if self.changes.dirty:
-                        try:
-                            data["mesh_delta"] = self.scene_stream.update()
-                        except RuntimeError:
-                            self.changes.structural = True
-                            return
-                        self.changes.dirty = False
+                data = self.snapshot(camera, width, height, state)
+                self.quality.apply(data, self.engine.config, self.changes.playing)
                 self.timings["export_ms"] = (time.perf_counter() - export_started) * 1000
-                data["lights"] = exporter.lights()
-                links=self.light_links.read(self.mesh_names,[light["name"] for light in data["lights"]])
-                for light in data["lights"]:light.update(links[light["name"]])
-                native_controls.apply(data, state)
-                data["maya_frame"] = cmds.currentTime(query=True)
                 submit_started = time.perf_counter()
-                self.engine.submit(data, force=self.force)
+                submitted = self.engine.submit(data, force=self.force)
+                self.timer.setInterval(int(self.engine.config['interval_ms']) if submitted else 16)
                 self.timings["submit_ms"] = (time.perf_counter() - submit_started) * 1000
                 self.force = False
             self.timings["tick_ms"] = (time.perf_counter() - tick_started) * 1000
@@ -211,9 +187,127 @@ class Controller:
         finally:
             self.in_tick = False
 
+    def snapshot(self, camera, width, height, state):
+        if self.changes.reconnect:
+            self.changes.refresh_callbacks()
+        if self.changes.material_dirty and not self.changes.structural:
+            self.changes.structural = any(not cmds.objExists(spec['name']) or exporter.material(spec['name']) != spec
+                                          for spec in self.material_specs)
+            self.changes.material_dirty = False
+        if self.changes.structural or not self.engine.shared or not self.scene_stream:
+            data = exporter.snapshot(camera, width, height, int(self.engine.config['samples']),
+                                     bool(self.engine.config['studio']), binary=bool(self.engine.shared))
+            self.material_specs = data['materials']
+            self.mesh_names = [mesh['name'] for mesh in data['meshes']]
+            if self.engine.shared:
+                if self.scene_stream:
+                    self.scene_stream.close()
+                self.scene_stream = SceneStream(self.mesh_names)
+                data['mesh_delta'] = self.scene_stream.update(initial=True)
+            self.changes.structural = self.changes.material_dirty = False
+        else:
+            data = {'protocol': 1, 'camera': exporter.camera(camera, width, height), 'width': width, 'height': height,
+                    'samples': int(self.engine.config['samples']), 'effects': exporter.effects()}
+            if self.changes.dirty:
+                try:
+                    data['mesh_delta'] = self.scene_stream.update()
+                except RuntimeError:
+                    self.changes.structural = True
+                    return self.snapshot(camera, width, height, state)
+        self.changes.dirty = False
+        data['lights'] = exporter.lights()
+        links = self.light_links.read(self.mesh_names, [light['name'] for light in data['lights']])
+        for light in data['lights']:
+            light.update(links[light['name']])
+        native_controls.apply(data, state)
+        data['maya_frame'] = cmds.currentTime(query=True)
+        return data
+
+    def time_changed(self, *args):
+        if capture.active():
+            self.changes.dirty = True
+            return
+        self.tick()
+
+    def capture_changed(self, active):
+        self.capture_active = active
+        self.capture_key = None
+        if active:
+            self.capture_records = []
+            self.capture_error = None
+            self.engine.playing = False
+        else:
+            if self.engine.session:
+                write_json(self.engine.session / 'playblast.json',
+                           {'valid': self.capture_error is None, 'frames': self.capture_records, 'error': self.capture_error})
+            if self.capture_error:
+                cmds.warning('Playblast Eevee incompleto. Los fotogramas fallidos se marcan en rojo; no uses ese archivo como captura válida.')
+            self.force = True
+
+    def before_draw(self, *args):
+        if not capture.active() or self.capture_syncing:
+            return
+        if not self.capture_active:
+            self.capture_changed(True)
+        self.capture_syncing = True
+        try:
+            width, height = render.MRenderer.outputTargetSize()
+            self.capture_frame(max(1, width), max(1, height))
+        except Exception:
+            self.capture_error = traceback.format_exc()
+            override = viewport.register()
+            override.gpu_image.frame = None
+            override.quad.frame = None
+            override.has_image = False
+            cmds.warning('Falló la sincronización del playblast Eevee: ' + self.capture_error)
+        finally:
+            self.capture_syncing = False
+
+    def accept_capture_response(self):
+        override = viewport.register()
+        if self.engine.frame:
+            override.set_frame(self.engine.frame)
+            if self.engine.gpu:
+                self.engine.shared.acknowledge(self.engine.received_id - 1)
+        else:
+            override.set_image(self.engine.image)
+
+    def capture_frame(self, width, height):
+        target = cmds.currentTime(query=True)
+        camera = cmds.modelPanel(self.panel, query=True, camera=True)
+        key = (target, width, height, camera)
+        if self.capture_key == key:
+            return
+        if self.engine.process is None:
+            self.engine.start()
+            self.suspended = self.waiting_for_view = False
+            self.missing_view_since = None
+            self.changes.structural = True
+        self.engine.playing = False
+        timeout = float(self.engine.config.get('capture_timeout', 120))
+        capture.wait_until(self.engine, lambda: self.engine.available, self.accept_capture_response, timeout)
+        self.changes.dirty = True
+        state = native_controls.read(self.panel)
+        data = self.snapshot(camera, width, height, state)
+        viewport.register().native = state
+        self.engine.submit(data, force=True)
+        token = self.engine.sent_id
+        capture.wait_until(self.engine, lambda: self.engine.received_id == token, self.accept_capture_response, timeout)
+        if self.engine.last_response.get('maya_frame') != target:
+            raise RuntimeError('Eevee devolvió una pose distinta al fotograma solicitado.')
+        self.capture_key = key
+        self.force = False
+        deformed = sum(bool(delta['flags'] & 2) for delta in records(data['mesh_delta'])) if data.get('mesh_delta') else 0
+        self.capture_records.append({'maya_frame': target, 'id': token, 'width': width, 'height': height,
+                                     'deformed_meshes': deformed})
+
     def close(self):
         self.timer.stop()
         om.MMessage.removeCallback(self.playback_callback)
+        try:
+            om.MMessage.removeCallback(self.pre_render_callback)
+        except RuntimeError:
+            pass  # Maya may already have destroyed the callback with its view.
         self.changes.close()
         self.light_links.close()
         if self.scene_stream:
@@ -407,6 +501,7 @@ def install_menu():
     if cmds.about(batch=True):
         return
     remove_menu()
+    capture.install()
     main = mel.eval("$tmp = $gMainWindow")
     cmds.menu(MENU, label="Eevee", parent=main, tearOff=True)
     cmds.menuItem(label="Activar en viewport actual", command=lambda *args: attach())
@@ -420,6 +515,7 @@ def install_menu():
 
 
 def remove_menu():
+    capture.uninstall()
     if cmds.menu(MENU, exists=True):
         cmds.deleteUI(MENU)
 

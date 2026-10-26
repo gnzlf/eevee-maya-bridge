@@ -206,6 +206,21 @@ class WireOverlay(Overlays):
         return render.MSceneRender.kWireFrame
 
 
+class CaptureFailure(render.MSceneRender):
+    """An explicit failure image must never look like a valid older pose."""
+    def __init__(self):
+        super().__init__('EeveeCaptureFailure')
+
+    def renderFilterOverride(self):
+        return 0
+
+    def clearOperation(self):
+        operation = super().clearOperation()
+        operation.setMask(render.MClearOperation.kClearAll)
+        operation.setClearColor((.7, 0, 0, 1))
+        return operation
+
+
 class Override(render.MRenderOverride):
     def __init__(self):
         super().__init__(NAME)
@@ -216,10 +231,12 @@ class Override(render.MRenderOverride):
         self.wire_overlay = WireOverlay()
         self.native = {}
         self.present = render.MPresentTarget("EeveePresent")
+        self.capture_failure = CaptureFailure()
         self.operations = []
         self.index = 0
         self.has_image = False
         self.destination = None
+        self.pending_attach = False
 
     def uiName(self):
         return "Eevee (Blender Bridge)"
@@ -230,6 +247,26 @@ class Override(render.MRenderOverride):
 
     def setup(self, destination):
         self.destination = destination
+        from . import ui, capture
+        if capture.active() and ui._controller is not None and ui._controller.capture_error:
+            self.operations = [self.capture_failure, self.present]
+            return
+        if not capture.active() and (ui._controller is None or ui._controller.panel != destination):
+            # Maya's Renderer menu assigns an override directly, without going
+            # through our menu command. Start its controller on the next idle.
+            self.has_image = False
+            if not self.pending_attach:
+                import maya.cmds as cmds
+                self.pending_attach = True
+                def attach_selected_panel():
+                    try:
+                        if (_override is self and cmds.modelPanel(destination, exists=True) and
+                                cmds.modelEditor(destination, query=True, rendererOverrideName=True) == NAME and
+                                (ui._controller is None or ui._controller.panel != destination)):
+                            ui.attach(destination)
+                    finally:
+                        self.pending_attach = False
+                cmds.evalDeferred(attach_selected_panel)
         image = self.gpu_image if self.gpu_image.frame else self.quad
         self.operations = ([image, self.overlay, self.present] if self.has_image
                            else [self.fallback, self.present])
