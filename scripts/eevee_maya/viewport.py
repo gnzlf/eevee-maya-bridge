@@ -267,6 +267,10 @@ class Override(render.MRenderOverride):
                     finally:
                         self.pending_attach = False
                 cmds.evalDeferred(attach_selected_panel)
+        elif not capture.active() and ui._controller is not None:
+            # Native navigation can draw while Qt timers are delayed. Update
+            # the textures for this draw without requesting a recursive redraw.
+            ui._controller.tick(refresh=False)
         image = self.gpu_image if self.gpu_image.frame else self.quad
         self.operations = ([image, self.overlay, self.present] if self.has_image
                            else [self.fallback, self.present])

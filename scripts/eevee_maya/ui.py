@@ -66,7 +66,7 @@ class Controller:
         self.engine.start()
         self.timer.start(int(self.engine.config["interval_ms"]))
 
-    def tick(self, *args):
+    def tick(self, *args, refresh=True):
         if self.in_tick or self.capture_syncing or capture.active():
             return
         if not cmds.modelPanel(self.panel, exists=True):
@@ -119,6 +119,8 @@ class Controller:
                 stop()
                 return
             received = self.engine.poll()
+            if self.engine.gpu and viewport.register().gpu_image.displayed_id:
+                self.presented_once = True
             # While the renderer is busy, avoid thousands of Maya commands per
             # second just to read the same controls. Always poll the IPC first.
             if not received and not self.engine.available:
@@ -148,9 +150,10 @@ class Controller:
                 else:
                     viewport.register().set_image(self.engine.image)
                 refresh_started = time.perf_counter()
-                view.refresh(False, True)
+                if refresh:
+                    view.refresh(False, True)
                 if self.engine.gpu and not native_display:
-                    self.presented_once = override.gpu_image.displayed_id == self.engine.received_id
+                    self.presented_once = self.presented_once or override.gpu_image.displayed_id == self.engine.received_id
                 elif not self.engine.gpu:self.presented_once=True
                 self.timings["refresh_ms"] = (time.perf_counter() - refresh_started) * 1000
                 if not self.engine.shared:

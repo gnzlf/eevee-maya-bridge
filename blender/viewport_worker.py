@@ -40,7 +40,7 @@ from eevee_maya.protocol import read_json, write_json
 from eevee_maya.shared_frame import SharedFrame, SharedMailbox
 from eevee_maya.gpu_share import GpuShare
 from eevee_maya.mesh_packet import records
-from scene_sync import SceneMirror, update_camera, update_effects, position_atmosphere
+from scene_sync import SceneMirror, update_camera, update_effects, position_atmosphere, world_bounds
 
 parser = argparse.ArgumentParser()
 parser.add_argument("--session", required=True)
@@ -183,6 +183,8 @@ def tick():
         if bpy.context.preferences.system.gl_texture_limit != setting:
             bpy.context.preferences.system.gl_texture_limit = setting
         mirror.update(request)
+        if 'meshes' in request or any(delta['flags'] & (1|2|16) for delta in mirror.deltas):
+            state['bounds_points']=None
         mirror.sync_lights(request)
         mirror.sync_display(request)
         mirror_finished = time.perf_counter()
@@ -206,7 +208,9 @@ def tick():
             state["effects_applied"] = True
         volume_view=(request["camera"],request["width"],request["height"])
         if effects_changed or volume_view!=state.get("volume_view") or mirror.deltas:
-            position_atmosphere(request,mirror.objects.values());state["volume_view"]=volume_view
+            if request.get('effects',{}).get('fog') and state.get('bounds_points') is None:
+                state['bounds_points']=world_bounds(mirror.objects.values())
+            position_atmosphere(request,bounds=state.get('bounds_points'));state["volume_view"]=volume_view
         scene = bpy.context.scene
         scene.render.engine = "BLENDER_EEVEE"
         scene.eevee.taa_samples = request.get("samples", 8)
@@ -285,6 +289,7 @@ def tick():
             shared.write(request["id"], width, height, pixels, depth, seconds)
         response = {"id": request["id"], "seconds": seconds,
                    "interactive":bool(request.get("interactive",False)),
+                   "navigating":bool(request.get("navigating",False)),
                    "color_audit":audit,
                    "engine": "BLENDER_EEVEE_VIEWPORT", "transport": "gpu_shared_texture" if gpu_transport else "shared_memory",
                    "meshes": len(mirror.objects), "scene_rebuilds": mirror.rebuilds,

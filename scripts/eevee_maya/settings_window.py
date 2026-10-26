@@ -29,6 +29,12 @@ class SettingsWindow:
                       changeCommand=self.set_adaptive_quality)
         cmds.text(label='Mientras editas usa hasta 960 píxeles y conserva las muestras AA de Maya. Al detenerte recupera la resolución elegida. El playblast conserva su resolución.',
                   align='left',wordWrap=True)
+        cmds.checkBox(label='Navegación de cámara más rápida',value=bool(controller.engine.config.get('fast_navigation',True)),
+                      changeCommand=lambda value:self.set_navigation('fast_navigation',bool(value)))
+        navigation=cmds.optionMenu(label='Ancho temporal al navegar',changeCommand=lambda value:self.set_navigation('navigation_width',int(value)))
+        for width in (320,480,640,960,1280,1920):cmds.menuItem(label=str(width))
+        cmds.optionMenu(navigation,edit=True,value=str(controller.engine.config.get('navigation_width',640)))
+        cmds.text(label='Al mover la cámara reduce temporalmente la resolución; conserva AA y efectos. Se recupera al detenerte. Puedes elegir más detalle o más velocidad.',align='left',wordWrap=True)
         cmds.text(label="Los botones de la barra de Maya y estos controles comparten estado.", align="left", wordWrap=True)
         self.lighting = cmds.optionMenu(label="Iluminación", changeCommand=self.set_lighting)
         self.light_modes = [("Por defecto", "default"), ("Todas las luces", "all"), ("Seleccionadas", "active"), ("Conjunto fijado", "selected"), ("Iluminación plana", "flat"), ("Sin luces", "none")]
@@ -123,6 +129,10 @@ class SettingsWindow:
     def set_adaptive_quality(self, value):
         self.controller.engine.config['adaptive_quality'] = bool(value)
         self.controller.force = True
+
+    def set_navigation(self,key,value):
+        self.controller.engine.config[key]=value
+        self.controller.force=True
 
     def focus_selection(self,*args):
         selected=cmds.ls(selection=True,long=True) or []

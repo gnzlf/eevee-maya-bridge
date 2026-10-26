@@ -260,7 +260,17 @@ def update_effects(request):
     scene.eevee.volumetric_samples=spec.get("volume_samples",32)
 
 
-def position_atmosphere(request,objects=()):
+def world_bounds(objects):
+    """Cacheable world corners; camera movement does not change these points."""
+    corners=[]
+    for obj in objects:
+        if obj.type!='MESH' or obj.hide_viewport:continue
+        matrix=np.asarray(obj.matrix_world,dtype=np.float64)
+        corners.append(np.asarray(obj.bound_box,dtype=np.float64) @ matrix[:3,:3].T+matrix[:3,3])
+    return np.concatenate(corners) if corners else np.empty((0,3),dtype=np.float64)
+
+
+def position_atmosphere(request,objects=(),bounds=None):
     """Finite camera-aligned volume: a world volume absorbs sunlight at infinity."""
     obj=bpy.data.objects.get("EeveeAtmosphereVolume")
     if obj is None or not request.get("effects",{}).get("fog"):return
@@ -269,13 +279,11 @@ def position_atmosphere(request,objects=()):
     start=max(.0001,camera["near"])
     end=max(start*1.01,min(camera["far"],spec.get("fog_distance",100)))
     if spec.get('fog_auto_range',True):
-        from mathutils import Vector
-        view=scene.camera.matrix_world.inverted()
-        for mesh in objects:
-            if mesh.type!='MESH' or mesh.hide_viewport:continue
-            matrix=view @ mesh.matrix_world
-            depths=[-(matrix @ Vector(corner)).z for corner in mesh.bound_box]
-            if max(depths)>start:end=max(end,min(camera['far'],max(depths)*1.05))
+        view=np.asarray(scene.camera.matrix_world.inverted(),dtype=np.float64)
+        points=world_bounds(objects) if bounds is None else bounds
+        if len(points):
+            farthest=float(np.max(-(points @ view[2,:3]+view[2,3])))
+            if farthest>start:end=max(end,min(camera['far'],farthest*1.05))
     half_x=(camera["ortho_width"]*.5*scale if camera["orthographic"] else end*math.tan(camera["fov_x"]*.5))*1.1
     half_y=half_x*request["height"]/request["width"]
     obj.matrix_world=scene.camera.matrix_world @ Matrix.Translation((0,0,-(start+end)*.5)) @ Matrix.Diagonal((half_x,half_y,(end-start)*.5,1))

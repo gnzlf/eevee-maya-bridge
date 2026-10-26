@@ -18,7 +18,8 @@ ROOT = Path(__file__).resolve().parents[2]
 def settings():
     defaults = {"blender": r"C:\Program Files\Blender Foundation\Blender 5.2\blender.exe",
                 "max_width": 640, "samples": 1, "interval_ms": 1, "studio": False,
-                "backend": "viewport", "adaptive_quality": True, "interaction_width": 960}
+                "backend": "viewport", "adaptive_quality": True, "interaction_width": 960,
+                "fast_navigation": True, "navigation_width": 640}
     path = ROOT / "config.json"
     if path.exists():
         defaults.update(read_json(path))
@@ -131,7 +132,7 @@ class Engine:
         self.last_response = response
         self.history.append(dict(response))
         self.status = "Eevee %d×%d (%s) | %d mallas | %.1f ms" % (
-            response['width'],response['height'],'previa al editar' if response.get('interactive') else 'calidad completa',
+            response['width'],response['height'],'navegación rápida' if response.get('navigating') else ('previa al editar' if response.get('interactive') else 'calidad completa'),
             response["meshes"], response["seconds"] * 1000)
         return True
 

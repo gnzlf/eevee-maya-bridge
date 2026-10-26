@@ -1,11 +1,12 @@
-Antialiasing durante animación y enfoque por superficie.
+Navegación de cámara con menos espera y resolución temporal configurable.
 
-- La calidad adaptativa conserva las muestras AA seleccionadas en Maya durante reproducción, navegación y edición. Deja de imponer dos muestras al moverse. La reducción temporal a 960 píxeles sigue disponible; más muestras tienen coste de GPU.
-- El autofoco sobre una malla usa la primera superficie visible en dirección al centro de la selección, en lugar del centro de su bounding box. Los componentes mantienen la profundidad seleccionada. Se consulta la cámara actual del panel y se respetan unidades y escala del rig.
-- Nuevo botón en Ajustes > Cámara: «Enfocar un punto con un clic en el viewport». Permite enfocar un ojo o una zona concreta del rostro. No cambia la selección y vuelve a la herramienta anterior después del clic; Q permite salir sin enfocar.
-- El enfoque establece el atributo nativo Focus Distance y activa los controles DOF de cámara, panel y viewport. Los cambios pueden deshacerse con Undo.
-- El preview aplica DOF una sola vez: desactiva el desenfoque de Blender en la imagen de origen antes de la presentación con profundidad en Maya. Evita sumar dos desenfoques.
+- El puente también consume y envía imágenes durante el dibujo nativo del panel. Evita depender exclusivamente del temporizador Qt cuando Maya está ocupado con una herramienta de navegación y evita refrescos recursivos.
+- El volumen conserva una caché de los límites mundiales de las mallas. Al navegar recalcula su alcance con operaciones vectorizadas; invalida la caché ante cambios de puntos, matrices, visibilidad o reconstrucción de escena.
+- Nuevo control en Ajustes > Viewport: «Navegación de cámara más rápida» y «Ancho temporal al navegar». Con calidad adaptativa activa, utiliza 640 píxeles por defecto mientras navegas y recupera la resolución configurada al detenerte. Puedes elegir 320–1920 o desactivar el modo.
+- Conserva las muestras AA de Maya y los efectos. La reproducción y el scrubbing de cámaras animadas conservan su política de calidad; el playblast no utiliza esta reducción de navegación y captura cada fotograma a su tamaño solicitado.
 
-Validación en Maya 2024.2 y RTX 3070: diez comprobaciones de superficie, componentes, unidades y cámaras; enfoque y selección de punto en la escena de producción; comparación de cuatro poses animadas con AA2/AA8 frente a referencia AA16; pruebas de distribución e instalador. El desenfoque continúa siendo un preview, con posibles halos, y no reproduce el bokeh completo de Blender.
+En una comparación controlada con la misma sesión, pose y cámara de una escena de 420 mallas, AA8 y efectos activos, la navegación pasó de unas 11 a 13 actualizaciones/s. El percentil 95 de demora bajó de 157 a 110 ms; la mediana quedó similar (82 frente a 88 ms). La comparación usa sincronización por Qt y preview de 960 píxeles frente al nuevo dibujo nativo y preview de 640; ambos conservan AA y efectos. La caché volumétrica estaba activa en ambos modos. Las pruebas iniciales dieron tiempos más variables; estas cifras no garantizan mejoras iguales en todos los equipos ni equivalen a Full HD a 30 FPS. Equipo de prueba: Maya 2024.2 y RTX 3070.
 
-Actualiza desde Eevee > Buscar actualizaciones o instala el EXE del release y reinicia Maya después de guardar tu trabajo. No garantiza 30 FPS: conservar más muestras puede reducir la velocidad. El instalador no tiene firma de código.
+Validación: pruebas de distribución e instalador; comprobación de actualizaciones mediante dibujo nativo con el temporizador Qt detenido; comparación de límites volumétricos; regresiones de controles ópticos y playblast PNG/AVI Full HD.
+
+Instala desde Eevee > Buscar actualizaciones y reinicia Maya después de guardar tu trabajo. El viewport y su DOF continúan siendo experimentales. El instalador no tiene firma de código.

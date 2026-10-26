@@ -52,3 +52,42 @@ class AdaptiveQuality(unittest.TestCase):
         for samples in (1,2,8,16,32,64):
             snapshot=self.data();snapshot['samples']=samples
             self.assertEqual(InteractionQuality().apply(snapshot,{},playing=True,now=0)['samples'],samples)
+    def test_camera_navigation_restores_resolution_and_preserves_aa(self):
+        quality=InteractionQuality();a=self.data();a['camera']['matrix']=[0]
+        quality.apply(a,{},now=0)
+        b=self.data();b['camera']['matrix']=[1]
+        moved=quality.apply(b,{},now=1)
+        self.assertEqual((moved['width'],moved['height'],moved['samples']),(640,360,16))
+        self.assertTrue(moved['navigating'])
+        c=self.data();c['camera']['matrix']=[1]
+        idle=quality.apply(c,{},now=1.5)
+        self.assertEqual((idle['width'],idle['height']),(1920,1080))
+        self.assertFalse(idle['navigating'])
+    def test_animated_camera_does_not_trigger_fast_navigation(self):
+        quality=InteractionQuality();a=self.data();a['camera']['matrix']=[0]
+        quality.apply(a,{},now=0)
+        b=self.data();b['camera']['matrix']=[1]
+        played=quality.apply(b,{},playing=True,now=1)
+        self.assertEqual(played['width'],960)
+        self.assertFalse(played['navigating'])
+    def test_focus_change_is_not_navigation_and_fast_mode_can_be_disabled(self):
+        quality=InteractionQuality();quality.apply(self.data(),{},now=0)
+        a=self.data();a['camera']['focus_distance']=100
+        self.assertFalse(quality.apply(a,{},now=1)['navigating'])
+        b=self.data();b['camera']['matrix']=[1]
+        disabled=quality.apply(b,{'fast_navigation':False},now=2)
+        self.assertEqual(disabled['width'],960)
+        self.assertFalse(disabled['navigating'])
+    def test_scrubbing_animated_camera_keeps_animation_resolution(self):
+        quality=InteractionQuality();a=self.data();a['camera']['matrix']=[0];a['maya_frame']=1
+        quality.apply(a,{},now=0)
+        b=self.data();b['camera']['matrix']=[1];b['maya_frame']=2
+        scrub=quality.apply(b,{},now=1)
+        self.assertEqual(scrub['width'],960)
+        self.assertFalse(scrub['navigating'])
+    def test_configured_navigation_width_is_used(self):
+        quality=InteractionQuality();a=self.data();a['camera']['matrix']=[0]
+        quality.apply(a,{},now=0)
+        b=self.data();b['camera']['matrix']=[1]
+        moved=quality.apply(b,{'navigation_width':1280},now=1)
+        self.assertEqual(moved['width'],1280)
