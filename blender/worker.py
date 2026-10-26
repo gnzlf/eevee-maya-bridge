@@ -16,7 +16,7 @@ ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT / "scripts"))
 from eevee_maya.protocol import read_json, write_json
 from eevee_maya.lighting import expand_spot_profiles
-from eevee_maya import shadow_quality
+from eevee_maya import shadow_quality, color_management
 
 # Maya and Blender cameras both look along local -Z. Rotate the world Y-up -> Z-up.
 CONVERSION = Matrix(((1, 0, 0, 0), (0, 0, -1, 0), (0, 1, 0, 0), (0, 0, 0, 1)))
@@ -40,10 +40,9 @@ def image_node(tree, specification, noncolor=False):
                 node.image.tiles.new(number)
         node.image.reload()
     try:
-        raw = specification.get("color_space", "").lower() in ("raw", "non-color", "utility - raw")
-        node.image.colorspace_settings.name = "Non-Color" if noncolor or raw else "sRGB"
+        node.image.colorspace_settings.name = color_management.image_space(specification.get('color_space','sRGB'), noncolor)
     except TypeError:
-        pass
+        node.image.colorspace_settings.name = 'Non-Color' if noncolor else 'sRGB'
     return node
 
 
@@ -59,7 +58,7 @@ def set_normals(mesh, normals):
     attribute.data.foreach_set("vector", values)
 
 
-def make_material(spec):
+def make_material(spec, transmission_preview=False):
     mat = bpy.data.materials.new(spec["name"])
     mat.use_nodes = True
     if spec["kind"] == "aiStandardVolume":
@@ -80,6 +79,7 @@ def make_material(spec):
     shader.inputs["Emission Color"].default_value = (*spec["emission"], 1)
     shader.inputs["Emission Strength"].default_value = spec["emission_strength"]
     shader.inputs["Transmission Weight"].default_value = spec["transmission"]
+    shader.inputs['Specular Tint'].default_value = (*spec.get('specular_color', (1, 1, 1)), 1)
     for key, socket, default in (("ior", "IOR", 1.5), ("specular_weight", "Specular IOR Level", .5),
                                  ("coat", "Coat Weight", 0), ("coat_roughness", "Coat Roughness", .1),
                                  ("sheen", "Sheen Weight", 0), ("subsurface", "Subsurface Weight", 0)):
@@ -93,6 +93,7 @@ def make_material(spec):
     for key, socket, noncolor in (("color_texture", "Base Color", False),
                                   ("metallic_texture", "Metallic", True),
                                   ("roughness_texture", "Roughness", True),
+                                  ("specular_color_texture", "Specular Tint", False),
                                   ("opacity_texture", "Alpha", True),
                                   ("emission_texture", "Emission Color", False)):
         node = image_node(mat.node_tree, spec.get(key), noncolor)
@@ -126,6 +127,52 @@ def make_material(spec):
             if normal["kind"] == "bump": converter.inputs["Distance"].default_value = normal.get("distance", .1)
             mat.node_tree.links.new(image.outputs["Color"], converter.inputs["Color" if normal["kind"] == "normal" else "Height"])
             mat.node_tree.links.new(converter.outputs["Normal"], shader.inputs["Normal"])
+    if transmission_preview and spec.get('transmission', 0) > 0:
+        # The fast viewport has no refraction trace behind eye shells. Mixing
+        # transparent transmission with a Fresnel reflection keeps the iris
+        # visible without enabling scene-wide ray tracing or altering Maya.
+        tree = mat.node_tree
+        shader.inputs['Transmission Weight'].default_value = 0
+        transparent = tree.nodes.new('ShaderNodeBsdfTransparent')
+        transparent.inputs['Color'].default_value = (*spec.get('transmission_color', (1, 1, 1)), 1)
+        reflection = tree.nodes.new('ShaderNodeBsdfAnisotropic')
+        reflection.inputs['Color'].default_value = (*spec.get('specular_color', (1, 1, 1)), 1)
+        tint_links = shader.inputs['Specular Tint'].links
+        if tint_links: tree.links.new(tint_links[0].from_socket, reflection.inputs['Color'])
+        reflection.inputs['Roughness'].default_value = spec['roughness']
+        roughness_links = shader.inputs['Roughness'].links
+        if roughness_links: tree.links.new(roughness_links[0].from_socket, reflection.inputs['Roughness'])
+        fresnel = tree.nodes.new('ShaderNodeFresnel')
+        fresnel.inputs['IOR'].default_value = spec.get('ior', 1.5)
+        normal_links = shader.inputs['Normal'].links
+        if normal_links:
+            for input_ in (reflection.inputs['Normal'], fresnel.inputs['Normal']):
+                tree.links.new(normal_links[0].from_socket, input_)
+        glass = tree.nodes.new('ShaderNodeMixShader')
+        specular = tree.nodes.new('ShaderNodeMath');specular.operation = 'MULTIPLY';specular.use_clamp = True
+        specular.inputs[1].default_value = spec.get('specular_weight', 1)
+        tree.links.new(fresnel.outputs[0], specular.inputs[0])
+        tree.links.new(specular.outputs[0], glass.inputs[0])
+        tree.links.new(transparent.outputs[0], glass.inputs[1])
+        tree.links.new(reflection.outputs[0], glass.inputs[2])
+        surface = tree.nodes.new('ShaderNodeMixShader')
+        surface.inputs[0].default_value = max(0, min(1, spec['transmission']))
+        tree.links.new(shader.outputs[0], surface.inputs[1])
+        tree.links.new(glass.outputs[0], surface.inputs[2])
+        # Apply the source opacity to both reflection and transmission.
+        opacity = tree.nodes.new('ShaderNodeMixShader')
+        opacity.inputs[0].default_value = min(spec.get('opacity', (1, 1, 1)))
+        clear = tree.nodes.new('ShaderNodeBsdfTransparent')
+        tree.links.new(clear.outputs[0], opacity.inputs[1])
+        for link in list(shader.inputs['Alpha'].links):
+            tree.links.new(link.from_socket, opacity.inputs[0]);tree.links.remove(link)
+        shader.inputs['Alpha'].default_value = 1
+        tree.links.new(surface.outputs[0], opacity.inputs[2])
+        output = next(node for node in tree.nodes if node.type == 'OUTPUT_MATERIAL')
+        tree.links.new(opacity.outputs[0], output.inputs['Surface'])
+        mat.surface_render_method = 'BLENDED'
+        mat.use_transparency_overlap = False
+        mat['eevee_transmission_preview'] = True
     return mat
 
 
@@ -186,7 +233,20 @@ def create_light(spec):
     return obj
 
 
-def build_scene(request):
+def configure_color(request):
+    settings = color_management.resolve(request.get('color_management'))
+    if bpy.data.colorspace.working_space != settings['working_space']:
+        # Values from Maya already belong to its scene-linear working space.
+        # Reinterpret them, rather than converting the old Blender values twice.
+        bpy.ops.wm.set_working_color_space(working_space=settings['working_space'], convert_colors=False)
+    scene = bpy.context.scene
+    if scene.view_settings.view_transform != settings['view']:
+        scene.view_settings.view_transform = settings['view']
+    return settings
+
+
+def build_scene(request, transmission_preview=False):
+    configure_color(request)
     for obj in list(bpy.data.objects):
         bpy.data.objects.remove(obj, do_unlink=True)
     for collection in list(bpy.data.collections):
@@ -195,7 +255,8 @@ def build_scene(request):
         for block in list(collection):
             if block.users == 0:
                 collection.remove(block)
-    mats = {spec["name"]: make_material(spec) for spec in request["materials"]}
+    mats = {spec["name"]: make_material(spec, transmission_preview=transmission_preview)
+            for spec in request["materials"]}
     for spec in request["meshes"]:
         mesh = bpy.data.meshes.new(spec["name"])
         if spec.get("binary_geometry"):
@@ -239,7 +300,9 @@ def build_scene(request):
         obj["maya_path"] = spec["name"]
         material_specs={m['name']:m for m in request['materials']}
         obj['eevee_depth_surface']=any(material_specs[name]['kind']!='aiStandardVolume' and
-                                      max(material_specs[name].get('opacity',(1,1,1)))>.001 for name in spec['materials'])
+                                      max(material_specs[name].get('opacity',(1,1,1))) *
+                                      (1-material_specs[name].get('transmission',0))>.001 for name in spec['materials'])
+        obj['eevee_source_depth_surface']=obj['eevee_depth_surface']
         obj.hide_viewport = not spec.get("visible", True)
         obj.hide_render = not spec.get("visible", True)
         bpy.context.scene.collection.objects.link(obj)
@@ -288,6 +351,7 @@ def apply_camera(cam,spec):
 
 
 def render(request, output):
+    configure_color(request)
     shadow_settings = request.get('shadow_settings', {})
     shadow_quality.apply(bpy.context.scene.eevee, {
         'shadow_quality': shadow_settings.get('preset', 'high'),
@@ -302,7 +366,6 @@ def render(request, output):
     scene.world.use_nodes = True
     scene.world.node_tree.nodes["Background"].inputs[0].default_value = (0.12, 0.12, 0.12, 1)
     scene.world.node_tree.nodes["Background"].inputs[1].default_value = 0.5
-    scene.view_settings.view_transform = "AgX"
     scene.render.image_settings.file_format = "PNG"
     scene.render.image_settings.color_mode = "RGBA"
     scene.render.filepath = str(output)

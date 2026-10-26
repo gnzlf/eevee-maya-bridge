@@ -110,6 +110,7 @@ class SettingsWindow:
         cmds.optionMenu(menu, edit=True, value=str(controller.engine.config["max_width"]))
         cmds.text(label="La iluminación admite Point, Spot, Directional y Area. La respuesta de luz y materiales puede diferir de Viewport 2.0 y Arnold.", align="left", wordWrap=True)
         cmds.text(label="Light linking por objeto y sombras. Los vínculos por caras, motion blur y luces especiales de Arnold siguen sin soporte.", align="left", wordWrap=True)
+        cmds.text(label='El espacio lineal sigue ACEScg, Rec.709 o Rec.2020 de Maya. La vista ACES 1.x usa ACES 1.3 de Blender como aproximación; las vistas OCIO personalizadas pueden diferir.', align='left', wordWrap=True)
         cmds.tabLayout(tabs, edit=True, tabLabel=((viewport_tab,"Viewport"),(shadow_tab,"Sombras"),(camera_tab,"Cámara"),(light_tab,"Luz"),(effects_tab,"Eevee")))
         self.timer.timeout.connect(self.refresh)
         self.timer.start(250)

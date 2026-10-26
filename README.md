@@ -35,6 +35,9 @@ Para desinstalar, cierra Maya y Blender y usa **Aplicaciones instaladas de Windo
 - Si un panel permanece sin vista gráfica durante tres segundos, su proceso Blender se cierra para liberar la escena de la GPU. El puente reconstruye el renderizador cuando vuelve el panel, conservando sus ajustes.
 - Traducción parcial de standardSurface/aiStandardSurface y Lambert/Blinn/Phong, mapas file directos, UDIM y normales/bump directos. Ambient Color e Incandescence de materiales clásicos.
 - Luces Point, Spot, Directional y Area; intensidad, exposición, cono, penumbra, sombras y participación volumétrica por luz.
+- Materiales Lambert mates y mapas de `specularColor` para Standard Surface, Arnold Standard Surface, Blinn y Phong. El mapa especular conserva las zonas oscuras de pupilas y otras superficies en lugar de reflejar blanco en toda la superficie.
+- La transmisión del viewport usa una aproximación de transparencia con reflexión Fresnel para dejar visibles los objetos detrás de córneas o cristales. No simula la refracción óptica completa de Arnold. El backend de render separado conserva su BSDF de transmisión.
+- El espacio lineal del render sigue ACEScg, Rec.709 o Rec.2020 de Maya, tanto para colores constantes como para texturas. La vista ACES 1.x de Maya se aproxima con ACES 1.3 de Blender; Un-tone-mapped usa Standard. Las configuraciones y vistas OCIO personalizadas todavía pueden diferir.
 - Light linking por objeto y vínculos de sombras desde las relaciones de Maya; editor nativo accesible desde Ajustes > Luz.
 - Controles reales del modelEditor para luces, sombras, AA, AO, texturas, material por defecto, wireframe y DOF Preview.
 - **Ajustes > Sombras** permite elegir Baja (25%), Media (50%), Alta (100%, predeterminada) o Ultra (100% con más muestras de sombras suaves). Antes el visor estaba fijo al 50% y 128 MB. La memoria automática usa 128 / 256 / 512 / 1024 MB según el nivel; también puedes elegir 128–2048 MB manualmente para escenas con muchas luces. Eevee usa mapas virtuales: estos porcentajes no equivalen a un tamaño fijo de 2K/4K. Más memoria por sí sola no afila los bordes. Más calidad cuesta GPU y VRAM.
@@ -51,7 +54,7 @@ Para un playblast Full HD, configura 1920×1080 y 100 % en las opciones nativas;
 
 **Sigue siendo experimental. No reproduce todas las funciones de Eevee, Maya ni Arnold y no garantiza 30 FPS.** La prueba de producción de aproximadamente un millón de vértices dio 13.8 actualizaciones/s a 640×409 y 13.1 a 1920×1227 con AO, AA de 2 muestras, sombras, DOF, bloom y volumen. La evaluación y sincronización de deformaciones todavía tienen coste de CPU.
 
-DOF y bloom son previews del puente, con posibles halos, no el bokeh/compositor completo de Blender. Se usa AgX, sin paridad OCIO con Maya. Dropoff se aproxima mediante luces concéntricas adicionales; los modos de decaimiento no cuadráticos se calibran a una distancia de referencia. No se certifican vínculos por cara ni aislamiento volumétrico por objeto. No hay soporte completo para NURBS, pelo, partículas, proxies Arnold/USD, VDB, redes arbitrarias de Arnold, displacement, smooth mesh preview, isolate select o motion blur.
+DOF y bloom son previews del puente, con posibles halos, no el bokeh/compositor completo de Blender. Los espacios y vistas de color comunes se traducen como se indica arriba, sin paridad completa con configuraciones OCIO personalizadas. Dropoff se aproxima mediante luces concéntricas adicionales; los modos de decaimiento no cuadráticos se calibran a una distancia de referencia. No se certifican vínculos por cara ni aislamiento volumétrico por objeto. No hay soporte completo para NURBS, pelo, partículas, proxies Arnold/USD, VDB, redes arbitrarias de Arnold, displacement, smooth mesh preview, isolate select o motion blur.
 
 ## Desarrollar y publicar desde esta carpeta
 
@@ -73,12 +76,14 @@ Con `mayapy` también puedes ejecutar `tests/distribution/probe_scene_changes.py
 
 Los artefactos quedan en `dist/`. Para publicar una nueva actualización:
 
+`probe_material_translation.py` también se ejecuta en el Maya gráfico dedicado de pruebas: comprueba Lambert, máscaras especulares, transmisión, material por defecto y colores por cara con una escena genérica.
+
 1. Modifica el código y aumenta `__version__` en `scripts/eevee_maya/__init__.py`.
 2. Ejecuta las pruebas correspondientes y confirma los cambios en Git.
 3. Con GitHub CLI autenticado, publica una versión nueva con sus notas:
 
 ```powershell
-./tools/publish_release.ps1 -Version 0.6.9 -NotesFile ./release-notes.md
+./tools/publish_release.ps1 -Version 0.6.10 -NotesFile ./release-notes.md
 ```
 
 El script construye los artefactos, sube `main` y crea el release. No reemplaza versiones ya publicadas. Los usuarios recibirán la oferta al volver a cargar Maya o al pulsar Buscar actualizaciones. También existe el workflow manual **Publicar versión** en GitHub Actions. Cada release conserva ZIP, instalador y SHA256SUMS.txt.

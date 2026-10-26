@@ -67,6 +67,12 @@ def normal_texture(node):
     return None
 
 
+def color_management():
+    return {'enabled': bool(cmds.colorManagementPrefs(query=True, cmEnabled=True)),
+            'rendering_space': cmds.colorManagementPrefs(query=True, renderingSpaceName=True),
+            'view': cmds.colorManagementPrefs(query=True, viewTransformName=True)}
+
+
 def material(node):
     kind = cmds.nodeType(node)
     if kind == "aiStandardVolume":
@@ -100,7 +106,10 @@ def material(node):
         "transmission": attr(node, "transmission", 0.0),
         "base_weight": attr(node, "base", 1.0) if standard else attr(node, "diffuse", 1),
         "ior": attr(node, "specularIOR", 1.5),
-        "specular_weight": attr(node, "specular", 1) if standard else .5,
+        "specular_weight": attr(node, "specular", 1) if standard else (0 if kind == 'lambert' else .5),
+        "specular_color": list(attr(node, "specularColor", (1, 1, 1))),
+        "specular_color_texture": texture(node, "specularColor") if standard or kind in ('blinn','phong') else None,
+        "transmission_color": list(attr(node, "transmissionColor", (1, 1, 1))),
         "coat": attr(node, "coat", 0), "coat_roughness": attr(node, "coatRoughness", .1),
         "coat_color": list(attr(node, "coatColor", (1, 1, 1))),
         "sheen": attr(node, "sheen", 0), "sheen_color": list(attr(node, "sheenColor", (1, 1, 1))),
@@ -242,7 +251,8 @@ def snapshot(camera_name, width=640, height=360, samples=16, studio=True, binary
             "lights": lights, "camera": camera(camera_name, width, height),
             "width": width, "height": height, "samples": samples,
             "studio": studio, "warnings": warnings,
-            "unit": cmds.currentUnit(query=True, linear=True), "effects": effects()}
+            "unit": cmds.currentUnit(query=True, linear=True), "effects": effects(),
+            "color_management": color_management()}
 
 
 def effects():

@@ -42,6 +42,7 @@ from eevee_maya.gpu_share import GpuShare
 from eevee_maya.mesh_packet import records
 from eevee_maya import shadow_quality
 from scene_sync import SceneMirror, update_camera, update_effects, position_atmosphere, world_bounds
+import worker
 
 parser = argparse.ArgumentParser()
 parser.add_argument("--session", required=True)
@@ -236,7 +237,7 @@ def tick():
         shadow_state = shadow_quality.apply(scene.eevee, {
             'shadow_quality': shadow_settings.get('preset', 'high'),
             'shadow_pool_size': shadow_settings.get('pool', 'auto')})
-        scene.view_settings.view_transform = "AgX"
+        color_state = worker.configure_color(request)
         state["space"].camera = cam
         width, height = request["width"], request["height"]
         gpu_transport = request.get("gpu_transport", False)
@@ -304,6 +305,8 @@ def tick():
                    "native": request.get("native"),
                    "eevee_state": {"samples":scene.eevee.taa_samples,"shadows":scene.eevee.use_shadows,
                                    "shadow_quality":shadow_state,
+                                   "transmission_preview_materials":[m.name for m in bpy.data.materials if m.get('eevee_transmission_preview')],
+                                   "color_management":color_state,
                                    "source_dof":cam.data.dof.use_dof,"dof_backend":"shared_depth_preview",
                                    "temporal_reprojection":scene.eevee.use_taa_reprojection,
                                    "ao":bool(native and native["ao"]),

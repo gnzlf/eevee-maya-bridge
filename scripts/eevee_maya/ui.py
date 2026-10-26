@@ -45,6 +45,7 @@ class Controller:
         self.presented_once = False
         self.scene_stream = None
         self.material_specs = []
+        self.color_management = None
         self.timings = {}
         self.quality = InteractionQuality()
         self.changes = SceneChanges()
@@ -194,6 +195,10 @@ class Controller:
             self.in_tick = False
 
     def snapshot(self, camera, width, height, state):
+        color_management = exporter.color_management()
+        if color_management != self.color_management:
+            self.changes.structural = True
+            self.color_management = color_management
         if self.changes.reconnect:
             self.changes.refresh_callbacks()
         if self.changes.material_dirty and not self.changes.structural:
@@ -226,6 +231,7 @@ class Controller:
         for light in data['lights']:
             light.update(links[light['name']])
         native_controls.apply(data, state)
+        data['color_management'] = color_management
         # Shared by interactive frames and the strict native playblast path.
         data['shadow_settings'] = shadow_quality.resolve(self.engine.config)
         data['maya_frame'] = cmds.currentTime(query=True)

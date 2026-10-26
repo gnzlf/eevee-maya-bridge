@@ -53,7 +53,7 @@ class SceneMirror:
                 if "points" in delta: spec["points_buffer"] = delta["points"]
                 if "normals" in delta: spec["normals_buffer"] = delta["normals"]
                 if "matrix" in delta: spec["matrix"] = np.frombuffer(delta["matrix"], dtype="<f8").tolist()
-            worker.build_scene(request)
+            worker.build_scene(request, transmission_preview=True)
             self.light_signature = None
             self.light_specs = {}
             self.link_collections = {}
@@ -95,7 +95,7 @@ class SceneMirror:
                         rebuild = True
                         break
         if rebuild:
-            worker.build_scene(request)
+            worker.build_scene(request, transmission_preview=True)
             self.light_signature = None
             self.light_specs = {}
             self.link_collections = {}
@@ -191,10 +191,12 @@ class SceneMirror:
                 shader.inputs["Roughness"].default_value = .5
             for obj in self.objects.values():
                 if obj.type!="MESH":continue
+                obj['eevee_depth_surface']=True
                 for i in range(len(obj.data.materials)):obj.data.materials[i]=mat
         else:
             for name,materials in self.original_materials.items():
                 obj=self.objects[name]
+                obj['eevee_depth_surface']=obj.get('eevee_source_depth_surface',True)
                 for i,mat in enumerate(materials):obj.data.materials[i]=mat
         # A view-layer override would also turn the atmosphere into a solid cube.
         bpy.context.view_layer.material_override = None

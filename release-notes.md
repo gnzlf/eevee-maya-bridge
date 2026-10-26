@@ -1,12 +1,11 @@
-Calidad de sombras configurable desde Maya.
+Correcciones de materiales, ojos y color de piel.
 
-- Nueva pestaña Ajustes > Sombras: Baja (25%), Media (50%), Alta (100%, predeterminada) y Ultra (100% con más muestras para sombras suaves). El visor anterior estaba fijo al 50% y 128 MB.
-- Memoria automática de 128 / 256 / 512 / 1024 MB según el nivel, o selección manual de 128–2048 MB. Más memoria ayuda cuando muchas luces llenan el presupuesto de sombras; por sí sola no aumenta su nitidez. Eevee usa mapas virtuales, sin equivalencia fija a mapas de 2K/4K.
-- Los cambios se aplican en vivo sin reiniciar Blender ni reconstruir las mallas. Se guardan en las preferencias de Maya y se respetan también en el playblast PNG/AVI. La calidad adaptativa conserva los ajustes de sombras; su resolución temporal de imagen sigue limitando el detalle visible al navegar.
-- El botón nativo de sombras de Maya y los controles por luz siguen activando o apagando las sombras. Se traduce el ángulo de sombra de Directional a Eevee, y Ajustes > Luz muestra los controles nativos de radio, ángulo y activación de sombras.
+- Traducción de specularColor y sus texturas en Standard Surface, aiStandardSurface, Blinn y Phong. Las máscaras especulares ya pueden mantener oscuras las pupilas en lugar de producir un reflejo blanco uniforme.
+- Los Lambert dejan de recibir el reflejo especular que el puente añadía por defecto. Se conservan sus colores y las asignaciones de materiales por cara.
+- El render sigue el espacio lineal ACEScg, Rec.709 o Rec.2020 de Maya. Corrige la interpretación de colores constantes ACEScg como Rec.709, que apagaba tonos de piel y ropa. Las texturas se convierten al mismo espacio de trabajo dentro de Blender, sin modificar los archivos originales.
+- Las vistas comunes se aproximan con sus equivalentes de Blender: ACES 1.x usa ACES 1.3 y Un-tone-mapped usa Standard. No hay paridad completa con vistas o configuraciones OCIO personalizadas; la imagen también puede diferir por la iluminación y los modelos de sombreado.
+- La transmisión del viewport usa transparencia y reflexión Fresnel para ver objetos detrás de córneas o cristales sin activar raytracing global. Es una aproximación sin refracción óptica completa. Las superficies totalmente transmisivas no tapan la profundidad usada por AO/DOF; el botón nativo de material por defecto puede volverlas opacas y restaura su estado original al desactivarlo.
 
-Alta y Ultra consumen más tiempo de GPU y memoria; no garantizan 30 FPS. La luz por defecto de Maya no proyecta sombras: usa una luz real con sombras activadas.
+Validación: comparación visual en una escena de producción con personajes; pruebas GPU de pupilas, máscaras especulares, transparencia y asignaciones por cara; captura nativa PNG/AVI Full HD; pruebas de distribución e instalación. No se modifican las escenas, referencias ni texturas originales.
 
-Validación en Maya 2024: comparación de imágenes con sombras finas a 1920 píxeles, cambios de nivel en vivo, controles nativos y ángulo de Directional, playblast PNG/AVI a 1920×1080 con sombras Ultra, escena de producción de 420 mallas con deformaciones entre poses y pruebas de distribución e instalación.
-
-Instala desde Eevee > Buscar actualizaciones y reinicia Maya después de guardar tu trabajo. También puedes descargar el instalador de este release. El viewport y su DOF continúan siendo experimentales. El instalador no tiene firma de código.
+Actualiza desde Eevee > Buscar actualizaciones y reinicia Maya después de guardar tu trabajo. El puente sigue siendo experimental y no reproduce todas las redes de materiales de Arnold. El instalador no tiene firma de código.
