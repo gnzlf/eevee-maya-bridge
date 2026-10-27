@@ -1,11 +1,11 @@
-Corrección de la opción Renderer > Eevee en Maya.
+Eevee Maya Bridge 0.6.14 corrige Smooth Mesh Preview: al pulsar 3, el viewport Eevee utiliza la geometría suavizada evaluada por Maya. 1 restaura la malla base y 2 conserva la superficie suavizada con el modo de jaula de Maya.
 
-- Eevee vuelve a registrarse también cuando Maya utiliza DirectX 11. En ese modo muestra un aviso nativo y su cuadradito abre la configuración de OpenGL Core Profile para el siguiente inicio. El render de Eevee sigue requiriendo OpenGL; la entrada DirectX es una guía de compatibilidad.
-- El botón de configuración guarda la preferencia cuando lo pulsas. No cambia el contexto gráfico, modifica escenas, guarda proyectos ni cierra Maya. Guarda tu trabajo y reinicia después. Si MAYA_VP2_DEVICE_OVERRIDE fuerza DirectX, se explica que debe retirarse del lanzador o de Maya.env.
-- Se reintenta el registro si Viewport 2.0 aún no está listo al cargar el plugin. Los reintentos son limitados y se cancelan al descargarlo. Eevee > Restaurar opción Renderer > Eevee permite volver a registrar la opción sin arrancar Blender.
-- El aviso DirectX evita iniciar el proceso Blender o ejecutar operaciones OpenGL en un contexto incompatible. Los intentos de captura en ese modo se marcan como inválidos.
-- Diagnósticos separados por proceso. Las pruebas batch ya no reemplazan el último diagnóstico gráfico; DIAGNOSTICO_EN_MAYA.py prefiere el registro de su propia sesión.
+- Respeta el nivel de preview, las UV, las asignaciones de materiales por cara y por instancia, y los creases de la salida de Maya.
+- Mantiene las deformaciones de skin animadas mediante el stream de puntos; no añade nodos ni aplica un Smooth permanente.
+- Reconstruye los recursos cuando cambian el nivel o las reglas de suavizado para evitar combinar topología base con puntos subdivididos.
 
-Verificado en la interfaz real de Maya con DirectX 11 y con OpenGL Core Profile tras reiniciar el perfil de prueba. Incluye las optimizaciones de luces y herramientas de diagnóstico de 0.6.12.
+Verificación: pruebas aisladas de las teclas nativas, niveles 1/2/3, OpenSubdiv y Maya Catmull-Clark, UV, materiales, creases, instancias y skin animado; capturas reales en Eevee del cambio de silueta y de poses deformadas.
 
-Actualiza desde Eevee > Buscar actualizaciones, guarda tu trabajo y reinicia Maya. Comprueba en Plug-in Manager que eeveeBridge.py esté Loaded; activa Auto load si quieres conservarlo en siguientes inicios. Después elige Renderer > Eevee. Si aparece el aviso DirectX, abre su cuadradito y configura OpenGL Core Profile para el próximo inicio.
+Más subdivisiones implican más evaluación, transferencia y memoria. Se utiliza el nivel del viewport; no implementa displacement ni los niveles de render de Arnold. El bridge sigue siendo experimental y no garantiza 30 FPS.
+
+Instala la actualización y reinicia Maya para cargar el nuevo stream nativo. El instalador conserva las preferencias y la versión anterior.

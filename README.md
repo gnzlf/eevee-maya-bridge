@@ -56,6 +56,7 @@ Se compararon doce casos contra la ruta anterior con imágenes idénticas, inclu
 - Integración en el menú Renderer de Maya con su cuadradito de opciones. Los ajustes pueden abrirse sin arrancar Blender y permanecen abiertos al activar o desactivar Eevee. El menú superior Eevee conserva ajustes, recarga y actualizaciones; ya no ofrece los dos modos de apertura de panel.
 - Indicador animado dentro del viewport hasta recibir la primera imagen: muestra inicio, lectura de escena, materiales, geometría y preparación de shaders, con contadores reales cuando están disponibles y tiempo transcurrido. No estima un porcentaje ni tiempo restante. Cambiar a Viewport 2.0 cancela el arranque; los fallos muestran un mensaje en el viewport.
 - Mallas evaluadas de Maya, cambios de puntos, normales, matrices y visibilidad. Maya ejecuta skinClusters, blendShapes, rigs y pesos pintados.
+- Desde 0.6.14, **Smooth Mesh Preview con 1 / 2 / 3**: Eevee recibe `outSmoothMesh` de Maya cuando el preview está activo. Respeta el nivel de subdivisión, UV, materiales por cara y creases de esa salida, también sobre deformaciones animadas. 1 vuelve a la malla base; 2 y 3 muestran la superficie suavizada. No añade nodos ni aplica un Smooth permanente. Cambiar el nivel o sus reglas reconstruye la geometría; la animación conserva los deltas de puntos. Más subdivisiones aumentan el coste de evaluación, transferencia y memoria.
 - Sincronización de rutas al renombrar mallas, grupos o materiales y al cambiar la jerarquía. Espera y recuperación cuando Maya reconstruye la vista de un panel.
 - Si un panel permanece sin vista gráfica durante tres segundos, su proceso Blender se cierra para liberar la escena de la GPU. El puente reconstruye el renderizador cuando vuelve el panel, conservando sus ajustes.
 - Traducción parcial de standardSurface/aiStandardSurface y Lambert/Blinn/Phong, mapas file directos, UDIM y normales/bump directos. Ambient Color e Incandescence de materiales clásicos.
@@ -79,7 +80,7 @@ Para un playblast Full HD, configura 1920×1080 y 100 % en las opciones nativas;
 
 **Sigue siendo experimental. No reproduce todas las funciones de Eevee, Maya ni Arnold y no garantiza 30 FPS.** La prueba de producción de aproximadamente un millón de vértices dio 13.8 actualizaciones/s a 640×409 y 13.1 a 1920×1227 con AO, AA de 2 muestras, sombras, DOF, bloom y volumen. La evaluación y sincronización de deformaciones todavía tienen coste de CPU.
 
-DOF y bloom son previews del puente, con posibles halos, no el bokeh/compositor completo de Blender. Los espacios y vistas de color comunes se traducen como se indica arriba, sin paridad completa con configuraciones OCIO personalizadas. Dropoff se aproxima mediante luces concéntricas adicionales; los modos de decaimiento no cuadráticos se calibran a una distancia de referencia. No se certifican vínculos por cara ni aislamiento volumétrico por objeto. No hay soporte completo para NURBS, pelo, partículas, proxies Arnold/USD, VDB, redes arbitrarias de Arnold, displacement, smooth mesh preview, isolate select o motion blur.
+DOF y bloom son previews del puente, con posibles halos, no el bokeh/compositor completo de Blender. Los espacios y vistas de color comunes se traducen como se indica arriba, sin paridad completa con configuraciones OCIO personalizadas. Dropoff se aproxima mediante luces concéntricas adicionales; los modos de decaimiento no cuadráticos se calibran a una distancia de referencia. No se certifican vínculos por cara ni aislamiento volumétrico por objeto. No hay soporte completo para NURBS, pelo, partículas, proxies Arnold/USD, VDB, redes arbitrarias de Arnold, displacement, isolate select o motion blur. Smooth Mesh Preview utiliza el nivel de viewport; no sustituye el displacement ni el nivel de subdivisión de render de Arnold.
 
 ## Desarrollar y publicar desde esta carpeta
 
@@ -120,7 +121,7 @@ Los artefactos quedan en `dist/`. Para publicar una nueva actualización:
 3. Con GitHub CLI autenticado, publica una versión nueva con sus notas:
 
 ```powershell
-./tools/publish_release.ps1 -Version 0.6.13 -NotesFile ./release-notes.md
+./tools/publish_release.ps1 -Version 0.6.14 -NotesFile ./release-notes.md
 ```
 
 El script construye los artefactos, sube `main` y crea el release. No reemplaza versiones ya publicadas. Los usuarios recibirán la oferta al volver a cargar Maya o al pulsar Buscar actualizaciones. También existe el workflow manual **Publicar versión** en GitHub Actions. Cada release conserva ZIP, instalador y SHA256SUMS.txt.

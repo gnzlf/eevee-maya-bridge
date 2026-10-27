@@ -6,6 +6,7 @@
 #include <maya/MMatrix.h>
 #include <maya/MIntArray.h>
 #include <maya/MStatus.h>
+#include <maya/MPlug.h>
 #include <vector>
 #include <string>
 #include <cstdint>
@@ -22,6 +23,7 @@ struct Mesh {
     int vertices=0, faces=0, loops=0;
     MMatrix matrix;
     bool visible=true;
+    bool smooth=false;
 };
 struct Cache {
     std::vector<Mesh> meshes;
@@ -38,6 +40,20 @@ struct Cache {
             if(!mesh.handle.isValid() || !mesh.handle.isAlive()) { error="Mesh deleted; rebuild cache"; return false; }
             MStatus status; MFnMesh fn(mesh.path,&status);
             if(!status) { error=status.errorString().asChar(); return false; }
+            bool smooth=fn.findPlug("displaySmoothMesh",false,&status).asInt()!=0;
+            if(!status) { error="Cannot read Smooth Mesh Preview"; return false; }
+            if(!initial && smooth!=mesh.smooth) {
+                error="Smooth Mesh Preview changed; rebuild cache"; return false;
+            }
+            // outSmoothMesh is Maya's evaluated preview: it preserves the native
+            // subdivision algorithm, creases, UV rules and deformer results.
+            // Keep its data object alive until all raw pointers have been copied.
+            MObject preview;
+            if(smooth) {
+                preview=fn.findPlug("outSmoothMesh",false,&status).asMObject();
+                if(status) status=fn.setObject(preview);
+                if(!status) { error="Cannot evaluate Smooth Mesh Preview"; return false; }
+            }
             int vertices=fn.numVertices(), faces=fn.numPolygons(), loops=fn.numFaceVertices();
             if(!initial && (vertices!=mesh.vertices || faces!=mesh.faces || loops!=mesh.loops)) {
                 error="Topology changed; rebuild cache"; return false;
@@ -62,7 +78,7 @@ struct Cache {
                     if(initial || normals!=mesh.normals) flags|=4;
                 }
             }
-            mesh.vertices=vertices; mesh.faces=faces; mesh.loops=loops;
+            mesh.vertices=vertices; mesh.faces=faces; mesh.loops=loops; mesh.smooth=smooth;
             if(!flags) continue;
             ++changes;
             integer(index); integer(flags); integer(vertices); integer((flags&4)?loops:0); integer(visible?1:0);

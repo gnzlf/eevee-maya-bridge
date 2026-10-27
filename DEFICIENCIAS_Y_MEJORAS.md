@@ -1,6 +1,6 @@
 # Eevee Maya Bridge: deficiencias y plan de mejora
 
-**Actualizado:** 27 de octubre de 2026. **Base revisada:** bridge 0.6.13, Maya 2024 y Blender 5.2.0 en Windows.
+**Actualizado:** 27 de octubre de 2026. **Base revisada:** bridge 0.6.14, Maya 2024 y Blender 5.2.0 en Windows.
 
 Este informe describe el estado del código y las verificaciones disponibles. Distingue funciones implementadas, compatibilidad parcial y propuestas pendientes. Las metas de rendimiento son objetivos de desarrollo, no resultados ya alcanzados.
 
@@ -187,7 +187,9 @@ Maya ya evalúa deformadores y pesos pintados antes del envío. Esto permite ver
 
 Prioridades: compartir mallas instanciadas, evitar copias redundantes, separar topología de puntos animados, actualizar únicamente lo deformado y gestionar cachés de texturas con presupuesto. El culling debe considerar también sombras y reflejos; eliminar todo lo que queda fuera de cámara puede cambiar la iluminación.
 
-NURBS, pelo, partículas, proxies Arnold/USD, VDB, displacement, smooth mesh preview, isolate select y motion blur no tienen soporte completo certificado. Deben incorporarse como tareas independientes, con conversión o backend definidos y pruebas de fidelidad. No son funciones que aparezcan automáticamente al instalar dependencias.
+**Implementado en 0.6.14:** Smooth Mesh Preview con las teclas nativas 1 / 2 / 3. Antes se extraía siempre la malla base. Ahora Python y el stream C++ leen la misma salida `outSmoothMesh` de Maya cuando el preview está activo; las asignaciones por cara se obtienen de los grupos de componentes remapeados por Maya, sin asumir el orden de subdivisión. Se conservan UV, creases y deformaciones. Cambiar las reglas del preview invalida los recursos; una pose animada con topología estable utiliza deltas. Las pruebas cubren OpenSubdiv y Maya Catmull-Clark, niveles, n-gons, materiales por instancia y skin, además de capturas reales del cambio de silueta. No modifica la topología original ni añade un modificador de Blender. Queda pendiente optimizar el coste de escenas con muchas mallas subdivididas: esta corrección aumenta la geometría real enviada y no certifica 30 FPS. No implementa displacement ni los niveles de subdivisión de render de Arnold.
+
+NURBS, pelo, partículas, proxies Arnold/USD, VDB, displacement, isolate select y motion blur no tienen soporte completo certificado. Deben incorporarse como tareas independientes, con conversión o backend definidos y pruebas de fidelidad. No son funciones que aparezcan automáticamente al instalar dependencias.
 
 ### 4.10 Integración nativa, captura y distribución
 

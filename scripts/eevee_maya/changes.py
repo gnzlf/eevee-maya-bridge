@@ -4,6 +4,16 @@ import maya.cmds as cmds
 
 
 class SceneChanges:
+    # These settings can change preview UVs/topology even when vertex counts
+    # remain unchanged. Ordinary transforms and deformations keep the delta path.
+    smooth_attributes = frozenset((
+        "displaySmoothMesh", "smoothLevel", "smoothDrawType", "useGlobalSmoothDrawType",
+        "smoothUVs", "keepMapBorders", "keepBorder", "keepHardEdge", "propagateEdgeHardness",
+        "boundaryRule", "continuity", "osdVertBoundary", "osdFvarBoundary",
+        "osdFvarPropagateCorners", "osdSmoothTriangles", "osdCreaseMethod",
+        "useOsdBoundaryMethods", "osdIndependentUVChannels", "smoothOffset", "smoothTessLevel",
+    ))
+
     def __init__(self):
         self.dirty = True
         self.reconnect = True
@@ -85,6 +95,19 @@ class SceneChanges:
             self.structural = True
         self.structural_events = (self.structural_events + [("material",fn.name())])[-32:]
 
+    def mesh_attribute_changed(self, message, plug, other, *args):
+        if message & (om.MNodeMessage.kAttributeSet | om.MNodeMessage.kConnectionMade
+                      | om.MNodeMessage.kConnectionBroken):
+            if om.MFnAttribute(plug.attribute()).name in self.smooth_attributes:
+                self.dirty = self.structural = True
+
+    def watch_node(self, node, dynamic):
+        self.node_callbacks.append(om.MNodeMessage.addNodeDirtyCallback(
+            node, self.mark if dynamic else self.material_changed))
+        if node.hasFn(om.MFn.kMesh):
+            self.node_callbacks.append(om.MNodeMessage.addAttributeChangedCallback(
+                node, self.mesh_attribute_changed))
+
     def refresh_callbacks(self):
         for callback in self.node_callbacks:
             om.MMessage.removeCallback(callback)
@@ -95,7 +118,7 @@ class SceneChanges:
         if not self.watch_dirty:
             for handle, dynamic in self.watches:
                 if handle.isValid() and handle.isAlive():
-                    self.node_callbacks.append(om.MNodeMessage.addNodeDirtyCallback(handle.object(), self.mark if dynamic else self.material_changed))
+                    self.watch_node(handle.object(), dynamic)
             self.reconnect = False
             return
         self.watches = []
@@ -115,7 +138,7 @@ class SceneChanges:
                 watch = not any(dag.child(i).hasFn(om.MFn.kCamera) or dag.child(i).hasFn(om.MFn.kLight) for i in range(dag.childCount()))
             if watch:
                 dynamic = node.hasFn(om.MFn.kMesh) or node.hasFn(om.MFn.kTransform)
-                self.node_callbacks.append(om.MNodeMessage.addNodeDirtyCallback(node, self.mark if dynamic else self.material_changed))
+                self.watch_node(node, dynamic)
                 self.watches.append((om.MObjectHandle(node), dynamic))
             iterator.next()
         self.reconnect = False

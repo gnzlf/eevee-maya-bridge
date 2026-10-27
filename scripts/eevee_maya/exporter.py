@@ -123,9 +123,12 @@ def material(node):
 
 
 def mesh(path, materials, binary=False):
-    fn = om.MFnMesh(path)
+    from . import smooth_mesh
+    source = om.MFnMesh(path)
+    fn = smooth_mesh.evaluated(source)
     counts, indices = fn.getVertices()
-    shaders, face_materials = fn.getConnectedShaders(path.instanceNumber())
+    shaders, face_materials = source.getConnectedShaders(path.instanceNumber())
+    face_materials = smooth_mesh.face_materials(source, fn, shaders, face_materials, path.instanceNumber())
     slots = []
     for shader in shaders:
         group = om.MFnDependencyNode(shader).name()
