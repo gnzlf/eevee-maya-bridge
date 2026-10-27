@@ -2,7 +2,7 @@
 import maya.cmds as cmds
 import maya.api.OpenMaya as om
 from . import native_controls, shadow_quality
-from . import graphics
+from . import graphics, maya_lights
 from .ui import QtCore
 
 WINDOW = "eeveeViewportSettings"
@@ -153,7 +153,7 @@ class SettingsWindow:
 
     def prepare_volume(self,*args):
         from . import ui
-        lights=cmds.ls(selection=True,dag=True,type="light",long=True) or []
+        lights=maya_lights.selected()
         if not lights:cmds.warning("Selecciona una luz Maya primero");return
         for light in lights:
             if not cmds.objExists(light+".eeveeVolume"):
@@ -193,7 +193,7 @@ class SettingsWindow:
 
     def focus_selection(self,*args):
         selected=cmds.ls(selection=True,long=True) or []
-        selected=[name for name in selected if not cmds.ls(name,dag=True,type='light') and not cmds.ls(name,dag=True,type='camera')]
+        selected=[name for name in selected if not cmds.ls(name,dag=True,type=maya_lights.types()) and not cmds.ls(name,dag=True,type='camera')]
         if not selected:cmds.warning('Selecciona el objeto o componente que quieras enfocar');return
         from . import focus
         path=focus.camera_path(cmds.modelPanel(self.panel,query=True,camera=True))
@@ -290,7 +290,7 @@ class SettingsWindow:
                 self.attribute(camera+"."+attr,label)
             self.attribute("hardwareRenderingGlobals.renderDepthOfField","DOF global de viewport")
             cmds.setParent(old); self.camera=camera
-        lights=cmds.ls(selection=True,dag=True,type="light",long=True) or []
+        lights=maya_lights.selected()
         light=lights[0] if lights else ""
         if light!=self.light:
             for child in cmds.columnLayout(self.light_column,query=True,childArray=True) or []:cmds.deleteUI(child)
@@ -298,6 +298,8 @@ class SettingsWindow:
             cmds.text(label=light.rsplit("|",1)[-1] if light else "Ninguna luz seleccionada",align="left")
             if light:
                 for attr,label in (("color","Color"),("intensity","Intensidad"),("aiExposure","Exposición Arnold"),
+                                   ("ambientShade","Ambient Shade"),("normalize","Normalizar área"),("legacyIntensity","Intensidad Maya antigua"),
+                                   ("aiSpread","Apertura de área Arnold"),("aiDiffuse","Difuso Arnold"),("aiSpecular","Especular Arnold"),
                                    ("decayRate","Decaimiento Maya"),("centerOfIllumination","Referencia de decaimiento"),
                                    ("coneAngle","Ángulo de cono"),("penumbraAngle","Penumbra"),("dropoff","Dropoff"),
                                    ("emitDiffuse","Emitir difuso"),("emitSpecular","Emitir especular"),

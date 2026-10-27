@@ -24,6 +24,7 @@ class SceneMirror:
         self.original_materials = {}
         self.link_collections = {}
         self.progress = None
+        self.ambient_enabled = False
 
     def sync_light_links(self,obj,spec):
         meshes={name:mesh for name,mesh in self.objects.items() if mesh.type=='MESH'}
@@ -128,6 +129,10 @@ class SceneMirror:
         signature = (request["lights"], native["displayLights"], native.get("selected_lights", []),native["shadows"])
         if signature == self.light_signature:
             return
+        ambient_enabled=any(spec['kind']=='ambientLight' for spec in request['lights'])
+        if ambient_enabled or self.ambient_enabled:
+            worker.sync_ambient(self.objects,request['lights'],native)
+        self.ambient_enabled=ambient_enabled
         existing = {obj["maya_path"]: obj for obj in bpy.context.scene.objects if obj.type == "LIGHT" and "maya_path" in obj}
         lights=worker.expand_spot_profiles(request['lights'])
         wanted = {spec["name"] for spec in lights}
@@ -196,6 +201,7 @@ class SceneMirror:
                 shader = mat.node_tree.nodes.get("Principled BSDF")
                 shader.inputs["Base Color"].default_value = (.5, .5, .5, 1)
                 shader.inputs["Roughness"].default_value = .5
+            if self.ambient_enabled:worker.install_ambient_material(mat)
             for obj in self.objects.values():
                 if obj.type!="MESH":continue
                 obj['eevee_depth_surface']=True

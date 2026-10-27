@@ -73,6 +73,7 @@ def make_material(spec, transmission_preview=False):
         mat.node_tree.links.new(volume.outputs["Volume"], output.inputs["Volume"])
         return mat
     shader = mat.node_tree.nodes.get("Principled BSDF")
+    mat['eevee_ambient_diffuse'] = max(0,spec.get('base_weight',1)) * (1-spec.get('metallic',0))
     shader.inputs["Base Color"].default_value = (*spec["color"], 1)
     shader.inputs["Metallic"].default_value = spec["metallic"]
     shader.inputs["Roughness"].default_value = spec["roughness"]
@@ -176,6 +177,56 @@ def make_material(spec, transmission_preview=False):
     return mat
 
 
+def install_ambient_material(mat):
+    """Object attributes keep light linking without duplicating shared materials."""
+    if not mat or not mat.use_nodes or mat.get('eevee_ambient_preview'):
+        return
+    tree=mat.node_tree
+    shader=tree.nodes.get('Principled BSDF')
+    if shader is None:return
+    attribute=tree.nodes.new('ShaderNodeAttribute');attribute.attribute_type='OBJECT'
+    attribute.attribute_name='eevee_ambient_color';attribute.name='EeveeMayaAmbient'
+    multiply=tree.nodes.new('ShaderNodeMixRGB');multiply.blend_type='MULTIPLY';multiply.inputs[0].default_value=1
+    multiply.inputs[1].default_value=shader.inputs['Base Color'].default_value
+    if shader.inputs['Base Color'].links:
+        tree.links.new(shader.inputs['Base Color'].links[0].from_socket,multiply.inputs[1])
+    tree.links.new(attribute.outputs['Color'],multiply.inputs[2])
+    weight=tree.nodes.new('ShaderNodeVectorMath');weight.operation='SCALE'
+    weight.inputs['Scale'].default_value=mat.get('eevee_ambient_diffuse',1)
+    tree.links.new(multiply.outputs['Color'],weight.inputs[0])
+    original=tree.nodes.new('ShaderNodeVectorMath');original.operation='SCALE'
+    original.inputs[0].default_value=shader.inputs['Emission Color'].default_value[:3]
+    original.inputs['Scale'].default_value=shader.inputs['Emission Strength'].default_value
+    if shader.inputs['Emission Color'].links:
+        tree.links.new(shader.inputs['Emission Color'].links[0].from_socket,original.inputs[0])
+    addition=tree.nodes.new('ShaderNodeVectorMath');addition.operation='ADD'
+    tree.links.new(original.outputs['Vector'],addition.inputs[0])
+    tree.links.new(weight.outputs['Vector'],addition.inputs[1])
+    tree.links.new(addition.outputs['Vector'],shader.inputs['Emission Color'])
+    shader.inputs['Emission Strength'].default_value=1
+    mat['eevee_ambient_preview']=True
+
+
+def sync_ambient(objects, lights, native=None):
+    ambient=[spec for spec in lights if spec['kind']=='ambientLight']
+    mode=(native or {}).get('displayLights','all')
+    selected=(native or {}).get('selected_lights',[])
+    active=[spec for spec in ambient if (mode=='all' or mode in ('selected','active') and spec['name'] in selected)
+            and spec.get('diffuse',True)]
+    for name,obj in objects.items():
+        if not ambient and 'eevee_ambient_color' not in obj:continue
+        if ambient:
+            for mat in obj.data.materials:install_ambient_material(mat)
+        color=[0.,0.,0.]
+        for spec in active:
+            if 'receivers' in spec and name not in spec['receivers']:continue
+            energy=max(0,spec['intensity']) * 2**spec.get('exposure',0) * (1-max(0,min(1,spec.get('ambient_shade',.45))))
+            for i in range(3):color[i]+=spec['color'][i]*energy
+        if list(obj.get('eevee_ambient_color',(0,0,0))) != color:
+            obj['eevee_ambient_color']=color
+            obj.update_tag(refresh={'OBJECT'})
+
+
 def geometry_signature(request):
     import json
     data = {key: request[key] for key in ("meshes", "materials", "lights", "studio")}
@@ -186,25 +237,31 @@ def apply_light(obj, spec, previous=None):
     # Moving a light must not rewrite its photometric data and invalidate
     # Eevee's light/shadow resources on every transform sample.
     if previous is not None and all(value==previous.get(key) for key,value in spec.items() if key!="matrix"):
-        if spec["matrix"]!=previous["matrix"]:obj.matrix_world=transform(spec["matrix"])
+        if spec["matrix"]!=previous["matrix"]:
+            matrix=transform(spec["matrix"])
+            obj.matrix_world=matrix.normalized() if obj.data.type=='AREA' else matrix
         return
     data = obj.data
     changed=lambda *keys:previous is None or any(spec.get(key)!=previous.get(key) for key in keys)
     if changed("color"):data.color = spec["color"]
     # Maya intensity is not watts. Calibrate at one scene unit without the old
     # arbitrary x1000 boost which clipped spot/point lights into white.
-    if changed("intensity","exposure","decay","decay_reference"):
+    if changed("intensity","exposure","decay","decay_reference", "ambient_shade", "normalize", "legacy_intensity", "size_x", "size_y"):
         energy = max(0, spec["intensity"]) * 2 ** spec["exposure"] * (math.pi if data.type == "SUN" else 4*math.pi)
         # Eevee exposes inverse-square falloff only. Other Maya modes are
         # intensity-matched at centerOfIllumination, not exact distance curves.
         if data.type!="SUN":energy *= max(.001,spec.get("decay_reference",5))**(2-int(spec.get("decay",2)))
+        if spec['kind'] == 'ambientLight':energy *= max(0, min(1, spec.get('ambient_shade', .45)))
+        if data.type == 'AREA':
+            if not spec.get('normalize', True):energy *= max(.000001,spec.get('size_x',2)*spec.get('size_y',2))
+            if spec.get('legacy_intensity',False):energy *= 12
         data.energy=energy
     if data.type != "SUN" and previous is None:
         # A fixed 100000-unit influence range wastes shadow-map precision in
         # centimetre-scale scenes. Eevee derives its range from light energy.
         data.use_custom_distance=False
     if changed("diffuse"):data.diffuse_factor = float(spec.get("diffuse", True))
-    if changed("specular"):data.specular_factor = float(spec.get("specular", True))
+    if changed("specular"):data.specular_factor = 0 if spec['kind']=='ambientLight' else float(spec.get("specular", True))
     if changed("volume","volume_factor"):data.volume_factor = max(0,spec.get("volume_factor",1)) if spec.get("volume",True) else 0
     if changed("shadows"):data.use_shadow = bool(spec.get("shadows", True))
     if data.type == "SPOT" and changed("cone_angle","penumbra","dropoff"):
@@ -218,13 +275,17 @@ def apply_light(obj, spec, previous=None):
         data.shadow_soft_size = max(0, spec.get("radius", 0))
     if data.type == "SUN" and changed("angle"):
         data.angle = max(0, min(math.pi, spec.get("angle", 0)))
-    if data.type == "AREA" and previous is None:
-        data.shape, data.size, data.size_y = "RECTANGLE", 2, 2
-    if changed("matrix"):obj.matrix_world = transform(spec["matrix"])
+    if data.type == "AREA" and changed('size_x','size_y','area_shape','spread'):
+        data.shape = 'ELLIPSE' if spec.get('area_shape') == 'disk' else 'RECTANGLE'
+        data.size, data.size_y = max(.001,spec.get('size_x',2)), max(.001,spec.get('size_y',2))
+        data.spread = max(.001,min(math.pi,spec.get('spread',math.pi)))
+    if changed("matrix"):
+        matrix=transform(spec["matrix"])
+        obj.matrix_world = matrix.normalized() if data.type=='AREA' else matrix
 
 
 def create_light(spec):
-    kind = {"pointLight": "POINT", "areaLight": "AREA", "directionalLight": "SUN", "spotLight": "SPOT"}[spec["kind"]]
+    kind = {"pointLight": "POINT", "areaLight": "AREA", "aiAreaLight": "AREA", "ambientLight": "POINT", "directionalLight": "SUN", "spotLight": "SPOT"}[spec["kind"]]
     data = bpy.data.lights.new(spec["name"], kind)
     obj = bpy.data.objects.new(spec["name"], data)
     obj["maya_path"] = spec["name"]
@@ -355,6 +416,9 @@ def apply_camera(cam,spec):
 
 def render(request, output):
     configure_color(request)
+    if any(light['kind']=='ambientLight' for light in request['lights']):
+        sync_ambient({obj['maya_path']:obj for obj in bpy.context.scene.objects
+                      if obj.type=='MESH' and 'maya_path' in obj},request['lights'],request.get('native'))
     shadow_settings = request.get('shadow_settings', {})
     shadow_quality.apply(bpy.context.scene.eevee, {
         'shadow_quality': shadow_settings.get('preset', 'high'),

@@ -45,7 +45,8 @@ def read(panel):
                   bloom_amount=float(global_value("bloomAmount", 1)))
     mode=result["displayLights"]
     if mode in ("selected", "active"):
-        selected = cmds.ls(selection=True, dag=True, type="light", long=True) or []
+        from . import maya_lights
+        selected = maya_lights.selected()
         # 'active' follows the current selection; 'selected' captures a preset
         # which remains lit while selecting geometry, as in Maya's Lighting menu.
         old=_selected_lights.get(panel)

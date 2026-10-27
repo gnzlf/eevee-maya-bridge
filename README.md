@@ -61,6 +61,9 @@ Se compararon doce casos contra la ruta anterior con imágenes idénticas, inclu
 - Si un panel permanece sin vista gráfica durante tres segundos, su proceso Blender se cierra para liberar la escena de la GPU. El puente reconstruye el renderizador cuando vuelve el panel, conservando sus ajustes.
 - Traducción parcial de standardSurface/aiStandardSurface y Lambert/Blinn/Phong, mapas file directos, UDIM y normales/bump directos. Ambient Color e Incandescence de materiales clásicos.
 - Luces Point, Spot, Directional y Area; intensidad, exposición, cono, penumbra, sombras y participación volumétrica por luz.
+- Desde 0.6.15 se detectan también **Area Light de Arnold (`aiAreaLight`) y Ambient Light de Maya**. Las áreas respetan dimensiones, Normalize y Legacy Intensity; las áreas de Arnold añaden exposición, apertura y disco/elipse. Su selección nativa y light linking utilizan los nombres originales de Maya.
+- Ambient Light añade iluminación difusa por objeto, con color, intensidad y light linking. Ambient Shade mezcla un componente uniforme con una aproximación puntual desde la posición de la luz; al apagar la luz o excluir su receptor desaparece su contribución, sin encender una luz predeterminada ni modificar el fondo. El componente uniforme no reproduce las sombras de rayos ni la iluminación volumétrica de una ambient de Maya. Las áreas cilíndricas de Arnold se aproximan como rectángulos; no hay equivalencia fotométrica completa con Arnold.
+- La caché nativa reutiliza puntos y normales de mallas que no se ensuciaron y pospone la evaluación de geometría oculta hasta mostrarla. Conserva los cambios de matrices y visibilidad. En una comparación de 14 poses de producción con 566 mallas (391 visibles), la mediana de extracción pasó de 62,4 a 43,3 ms; solo 41 mallas visibles necesitaron evaluar geometría por pose. Se alternó el orden de ambas rutas: posiciones idénticas, diferencia máxima en normales de 4,2e-7. Es una medición de extracción, no de FPS del viewport completo.
 - Materiales Lambert mates y mapas de `specularColor` para Standard Surface, Arnold Standard Surface, Blinn y Phong. El mapa especular conserva las zonas oscuras de pupilas y otras superficies en lugar de reflejar blanco en toda la superficie.
 - La transmisión del viewport usa una aproximación de transparencia con reflexión Fresnel para dejar visibles los objetos detrás de córneas o cristales. No simula la refracción óptica completa de Arnold. El backend de render separado conserva su BSDF de transmisión.
 - El espacio lineal del render sigue ACEScg, Rec.709 o Rec.2020 de Maya, tanto para colores constantes como para texturas. La vista ACES 1.x de Maya se aproxima con ACES 1.3 de Blender; Un-tone-mapped usa Standard. Las configuraciones y vistas OCIO personalizadas todavía pueden diferir.
@@ -121,7 +124,7 @@ Los artefactos quedan en `dist/`. Para publicar una nueva actualización:
 3. Con GitHub CLI autenticado, publica una versión nueva con sus notas:
 
 ```powershell
-./tools/publish_release.ps1 -Version 0.6.14 -NotesFile ./release-notes.md
+./tools/publish_release.ps1 -Version 0.6.15 -NotesFile ./release-notes.md
 ```
 
 El script construye los artefactos, sube `main` y crea el release. No reemplaza versiones ya publicadas. Los usuarios recibirán la oferta al volver a cargar Maya o al pulsar Buscar actualizaciones. También existe el workflow manual **Publicar versión** en GitHub Actions. Cada release conserva ZIP, instalador y SHA256SUMS.txt.

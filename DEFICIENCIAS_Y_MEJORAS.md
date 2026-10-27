@@ -1,6 +1,6 @@
 # Eevee Maya Bridge: deficiencias y plan de mejora
 
-**Actualizado:** 27 de octubre de 2026. **Base revisada:** bridge 0.6.14, Maya 2024 y Blender 5.2.0 en Windows.
+**Actualizado:** 27 de octubre de 2026. **Base revisada:** bridge 0.6.15, Maya 2024 y Blender 5.2.0 en Windows.
 
 Este informe describe el estado del código y las verificaciones disponibles. Distingue funciones implementadas, compatibilidad parcial y propuestas pendientes. Las metas de rendimiento son objetivos de desarrollo, no resultados ya alcanzados.
 
@@ -184,6 +184,8 @@ Los mapas de sombras son virtuales: subir la memoria a 2 GB no equivale a selecc
 ### 4.9 Escenarios grandes, rigs y cobertura de escena
 
 Maya ya evalúa deformadores y pesos pintados antes del envío. Esto permite ver sus resultados, pero el coste del rig sigue existiendo en Maya y el envío de mallas deformadas puede ser importante.
+
+**Optimización en 0.6.15:** el stream mantiene callbacks de suciedad por malla y reutiliza puntos y normales cuando no cambiaron; matrices y visibilidad se siguen comprobando. Las mallas ocultas no se subdividen durante la exportación inicial y no actualizan sus puntos durante la animación. Al volver a mostrarlas se lee la deformación actual y se reconstruye su preview si cambia la topología requerida. Las pruebas cubren edición de componentes y API, Undo, ocultar/mostrar y deformadores en modos DG, serial y paralelo. En 14 poses de una escena con 566 mallas, solo 41 de las 391 visibles requirieron extracción por pose. La mediana de extracción pasó de 62,4 a 43,3 ms con orden alternado; las posiciones coinciden y la diferencia máxima en normales fue de 4,2e-7. Esto no representa una medición de FPS ni elimina el coste de los vértices subdivididos visibles.
 
 Prioridades: compartir mallas instanciadas, evitar copias redundantes, separar topología de puntos animados, actualizar únicamente lo deformado y gestionar cachés de texturas con presupuesto. El culling debe considerar también sombras y reflejos; eliminar todo lo que queda fuera de cámara puede cambiar la iluminación.
 

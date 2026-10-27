@@ -125,7 +125,9 @@ def material(node):
 def mesh(path, materials, binary=False):
     from . import smooth_mesh
     source = om.MFnMesh(path)
-    fn = smooth_mesh.evaluated(source)
+    # Hidden objects retain a lightweight base resource. Revealing a smoothed
+    # object makes the native stream request its current preview topology.
+    fn = smooth_mesh.evaluated(source) if path.isVisible() else source
     counts, indices = fn.getVertices()
     shaders, face_materials = source.getConnectedShaders(path.instanceNumber())
     face_materials = smooth_mesh.face_materials(source, fn, shaders, face_materials, path.instanceNumber())
@@ -197,35 +199,42 @@ def camera(camera_name, width, height):
 
 
 def lights():
+    from . import maya_lights
     result = []
-    iterator = om.MItDag(om.MItDag.kDepthFirst, om.MFn.kLight)
-    while not iterator.isDone():
-        path = iterator.getPath()
+    kinds = maya_lights.types()
+    for name in cmds.ls(type=kinds, long=True) or []:
+        selection = om.MSelectionList(); selection.add(name)
+        path = selection.getDagPath(0)
         if path.isVisible():
             name = path.fullPathName()
             kind = cmds.nodeType(name)
-            if kind in ("directionalLight", "pointLight", "spotLight", "areaLight"):
+            if kind in kinds:
                 matrix = matrix_values(path.inclusiveMatrix())
                 result.append({"name": name, "kind": kind, "matrix": matrix,
                                "color": list(attr(name, "color", (1, 1, 1))),
                                "intensity": attr(name, "intensity", 1), "exposure": attr(name, "aiExposure", 0),
                                "cone_angle": math.radians(attr(name, "coneAngle", 40)),
                                "penumbra": math.radians(attr(name, "penumbraAngle", 0)),
-                               "dropoff": attr(name, "dropoff", 0), "decay": attr(name, "decayRate", 0),
+                               "dropoff": attr(name, "dropoff", 0), "decay": attr(name, "decayRate", 2 if kind == 'aiAreaLight' else 0),
                                "decay_reference": max(.001,attr(name,"centerOfIllumination",5)),
-                               "diffuse": bool(attr(name, "emitDiffuse", True)), "specular": bool(attr(name, "emitSpecular", True)),
+                               "diffuse": attr(name, "aiDiffuse", 1) if kind == 'aiAreaLight' else bool(attr(name, "emitDiffuse", True)),
+                               "specular": attr(name, "aiSpecular", 1) if kind == 'aiAreaLight' else bool(attr(name, "emitSpecular", True)),
                                "volume": bool(attr(name, "eeveeVolume", True)), "volume_factor": attr(name, "eeveeVolumeFactor", 1),
-                               "shadows": bool(attr(name, "useDepthMapShadows", False) or attr(name, "useRayTraceShadows", False)),
+                               "shadows": bool(attr(name, "aiCastShadows", True)) if kind == 'aiAreaLight' else bool(attr(name, "useDepthMapShadows", False) or attr(name, "useRayTraceShadows", False)),
+                               "ambient_shade": attr(name, "ambientShade", .45),
+                               "normalize": bool(attr(name, "normalize", True)),
+                               "legacy_intensity": bool(attr(name, "legacyIntensity", False)),
+                               "area_shape": attr(name, "aiTranslator", 'quad') or 'quad',
+                               "spread": math.pi * attr(name, "aiSpread", 1),
                                "radius": attr(name, "lightRadius", 0),
                                "angle": math.radians(attr(name, "lightAngle", 0)),
                                "size_x": 2 * math.sqrt(sum(v*v for v in matrix[:3])),
                                "size_y": 2 * math.sqrt(sum(v*v for v in matrix[4:7]))})
-        iterator.next()
     return result
 
 
 def snapshot(camera_name, width=640, height=360, samples=16, studio=True, binary=False):
-    materials, meshes, lights, warnings = {}, [], [], []
+    materials, meshes, warnings = {}, [], []
     iterator = om.MItDag(om.MItDag.kDepthFirst, om.MFn.kInvalid)
     while not iterator.isDone():
         path = iterator.getPath()
@@ -237,21 +246,9 @@ def snapshot(camera_name, width=640, height=360, samples=16, studio=True, binary
                     meshes.append(mesh(path, materials, binary=binary))
                 except (RuntimeError, ValueError) as exc:
                     warnings.append(path.fullPathName() + ": " + str(exc))
-        elif obj.hasFn(om.MFn.kLight) and path.isVisible():
-            name = path.fullPathName()
-            kind = cmds.nodeType(name)
-            if kind in ("directionalLight", "pointLight", "spotLight", "areaLight"):
-                lights.append({
-                    "name": name, "kind": kind,
-                    "matrix": matrix_values(path.inclusiveMatrix()),
-                    "color": list(attr(name, "color", (1, 1, 1))),
-                    "intensity": attr(name, "intensity", 1.0),
-                    "exposure": attr(name, "aiExposure", 0.0),
-                    "cone_angle": math.radians(attr(name, "coneAngle", 40.0)),
-                })
         iterator.next()
     return {"protocol": 1, "meshes": meshes, "materials": list(materials.values()),
-            "lights": lights, "camera": camera(camera_name, width, height),
+            "lights": lights(), "camera": camera(camera_name, width, height),
             "width": width, "height": height, "samples": samples,
             "studio": studio, "warnings": warnings,
             "unit": cmds.currentUnit(query=True, linear=True), "effects": effects(),

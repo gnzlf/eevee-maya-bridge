@@ -1,11 +1,14 @@
-Eevee Maya Bridge 0.6.14 corrige Smooth Mesh Preview: al pulsar 3, el viewport Eevee utiliza la geometría suavizada evaluada por Maya. 1 restaura la malla base y 2 conserva la superficie suavizada con el modo de jaula de Maya.
+Eevee Maya Bridge 0.6.15 corrige luces de área y añade Ambient Light, manteniendo Smooth Mesh Preview.
 
-- Respeta el nivel de preview, las UV, las asignaciones de materiales por cara y por instancia, y los creases de la salida de Maya.
-- Mantiene las deformaciones de skin animadas mediante el stream de puntos; no añade nodos ni aplica un Smooth permanente.
-- Reconstruye los recursos cuando cambian el nivel o las reglas de suavizado para evitar combinar topología base con puntos subdivididos.
+- Detecta Area Light nativa de Maya, Area Light de Arnold (aiAreaLight) y Ambient Light de Maya, incluso al usar luces seleccionadas.
+- Las áreas respetan dimensiones, Normalize, Legacy Intensity, exposición y apertura de Arnold; evita aplicar dos veces la escala del área.
+- Ambient Light responde a color e intensidad, apagado, selección y light linking por objeto. Ambient Shade mezcla una contribución uniforme con una aproximación puntual. Actualiza los atributos de sombreado sin duplicar materiales compartidos.
+- La caché C++ reutiliza mallas sin cambios y omite la actualización de geometría oculta. Al mostrarla de nuevo recupera la deformación y el smooth actuales.
 
-Verificación: pruebas aisladas de las teclas nativas, niveles 1/2/3, OpenSubdiv y Maya Catmull-Clark, UV, materiales, creases, instancias y skin animado; capturas reales en Eevee del cambio de silueta y de poses deformadas.
+Verificación: capturas reales PNG Full HD de luces de área y ambient; pruebas de selección, normalización, light linking, intensidad cero y material predeterminado; smooth y skin animado; edición, Undo, ocultar/mostrar y deformadores en DG, serial y paralelo.
 
-Más subdivisiones implican más evaluación, transferencia y memoria. Se utiliza el nivel del viewport; no implementa displacement ni los niveles de render de Arnold. El bridge sigue siendo experimental y no garantiza 30 FPS.
+Rendimiento: en una comparación de 14 poses de producción con 566 mallas (391 visibles), la mediana de extracción de geometría pasó de 62,4 a 43,3 ms. Se alternó el orden de ambas rutas; las posiciones coinciden y la diferencia máxima en normales fue de 4,2e-7. Es una mejora de extracción, no una medición de FPS del viewport completo.
 
-Instala la actualización y reinicia Maya para cargar el nuevo stream nativo. El instalador conserva las preferencias y la versión anterior.
+Ambient es un preview difuso: el componente uniforme no reproduce sombras de rayos ni volumen de Maya. Las áreas cilíndricas de Arnold se aproximan como rectángulos y no hay equivalencia fotométrica completa con Arnold. El bridge sigue siendo experimental.
+
+Actualiza desde Eevee > Buscar actualizaciones, guarda tu trabajo y reinicia Maya para cargar la nueva biblioteca nativa. El instalador conserva las preferencias y la versión anterior.
