@@ -6,6 +6,7 @@ from mathutils import Matrix
 
 import worker
 from eevee_maya.mesh_packet import records
+from eevee_maya.lighting import same_light_links, set_light_visibility
 
 
 class SceneMirror:
@@ -143,21 +144,26 @@ class SceneMirror:
             spec=dict(spec,shadows=bool(spec.get("shadows",False) and native["shadows"]))
             effective_specs[spec["name"]]=spec
             obj = existing.get(spec["name"])
+            previous = self.light_specs.get(spec["name"])
+            created = obj is None
             if obj is None: obj = worker.create_light(spec)
-            elif self.light_specs.get(spec["name"]) != spec:
-                worker.apply_light(obj, spec, self.light_specs.get(spec["name"]))
-            self.sync_light_links(obj,spec)
+            elif previous != spec:
+                worker.apply_light(obj, spec, previous)
+            # Transform/intensity/cone edits do not change receiver membership.
+            # Avoid rebuilding mesh sets and reassigning Blender collections for
+            # every helper light of a dropoff profile. Scene rebuilds reset the
+            # previous specs, and new lights always initialize their links.
+            if created or not same_light_links(spec, previous):
+                self.sync_light_links(obj,spec)
             visible = mode == "all" or (mode in ("selected", "active") and spec.get('maya_source',spec['name']) in native.get("selected_lights", []))
-            obj.hide_viewport = not visible
-            obj.hide_render = not visible
+            set_light_visibility(obj, visible)
         headlight = bpy.data.objects.get("EeveeDefaultHeadlight")
         if headlight:
-            headlight.data.use_shadow=False
-            headlight.hide_viewport = mode != "default"
-            headlight.hide_render = mode != "default"
+            if headlight.data.use_shadow: headlight.data.use_shadow = False
+            set_light_visibility(headlight, mode == 'default')
         for name in ("EeveeStudioKey", "EeveeStudioFill"):
             obj = bpy.data.objects.get(name)
-            if obj: obj.hide_viewport = obj.hide_render = True
+            if obj: set_light_visibility(obj, False)
         sync_environment(mode)
         self.light_signature = signature
         self.light_specs = effective_specs

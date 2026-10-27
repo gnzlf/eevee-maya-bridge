@@ -2,6 +2,22 @@
 import math
 
 
+def set_light_visibility(obj, visible):
+    """Do not dirty Blender RNA merely to repeat an unchanged panel state."""
+    hidden = not visible
+    if obj.hide_viewport != hidden:
+        obj.hide_viewport = hidden
+    if obj.hide_render != hidden:
+        obj.hide_render = hidden
+
+
+def same_light_links(current, previous):
+    """Missing fields differ from explicit empty lists (no receivers)."""
+    return previous is not None and all(
+        (field in current) == (field in previous) and current.get(field) == previous.get(field)
+        for field in ('receivers', 'shadow_blockers'))
+
+
 def expand_spot_profiles(lights):
     result = []
     for spec in lights:

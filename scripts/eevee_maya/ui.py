@@ -368,7 +368,7 @@ class Controller:
         state = native_controls.read(self.panel)
         data = self.snapshot(camera, width, height, state)
         viewport.register().native = state
-        self.engine.submit(data, force=True)
+        self.engine.submit(data, force=True, capture=True)
         token = self.engine.sent_id
         capture.wait_until(self.engine, lambda: self.engine.received_id == token, self.accept_capture_response, timeout)
         if self.engine.last_response.get('maya_frame') != target:
@@ -594,6 +594,10 @@ def install_menu():
     cmds.menu(MENU, label="Eevee", parent=main, tearOff=True)
     cmds.menuItem(label="Ajustes del viewport Eevee", command=show_settings)
     cmds.menuItem(label="Recargar escena en Eevee", command=refresh)
+    from . import diagnostics_ui
+    cmds.menuItem(divider=True)
+    cmds.menuItem(label="Guardar diagnóstico de rendimiento…", command=diagnostics_ui.save_performance)
+    cmds.menuItem(label="Revisar materiales (solo lectura)…", command=diagnostics_ui.show_materials)
     from . import updates_ui
     updates_ui.install_menu(MENU)
 

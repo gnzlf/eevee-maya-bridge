@@ -17,7 +17,7 @@ def files(root=ROOT):
     for directory,pattern in (('scripts','*.py'),('blender','*.py'),('plug-ins','*.py'),('shaders','*')):
         yield from (p for p in (root/directory).rglob(pattern) if p.is_file() and '__pycache__' not in p.parts)
     for name in ('bin/eevee_gpu_v5.dll','bin/eevee_scene.dll','config.json','release-config.json','ABRIR_EN_MAYA.py','DIAGNOSTICO_EN_MAYA.py',
-                 'README.md','THIRD_PARTY_NOTICES.md','native/gpu_bridge.cpp','native/scene_stream.cpp','native/CMakeLists.txt'):
+                 'README.md','DEFICIENCIAS_Y_MEJORAS.md','THIRD_PARTY_NOTICES.md','native/gpu_bridge.cpp','native/scene_stream.cpp','native/CMakeLists.txt'):
         yield root/name
 
 

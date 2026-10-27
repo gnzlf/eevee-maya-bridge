@@ -1,5 +1,5 @@
 """Eevee viewport bridge for Maya. Blender runs in a separate process."""
-__version__ = "0.6.11"
+__version__ = "0.6.12"
 
 
 def show():

@@ -30,6 +30,25 @@ Para desinstalar, cierra Maya y Blender y usa **Aplicaciones instaladas de Windo
 
 ## Funciones
 
+### Diagnóstico de bajo impacto (0.6.12)
+
+- **Eevee > Guardar diagnóstico de rendimiento…** guarda los últimos 10 segundos de imágenes nuevas presentadas por GPU: resolución efectiva, muestras, modo de navegación/reproducción/playblast, distribución de tiempos y latencia desde el envío hasta el dibujo. No cuenta redibujos repetidos como imágenes nuevas. La latencia empieza después de evaluar y extraer la escena; no equivale a la latencia completa del usuario ni a la del monitor. El informe identifica muestras con resoluciones o calidades mezcladas y distingue frecuencia dentro de la muestra de frecuencia en la ventana completa. Sin imágenes nuevas no inventa FPS.
+- **Eevee > Revisar materiales (solo lectura)…** muestra los materiales de la escena, incluidos los no asignados, y detecta familias sin traductor, conexiones no traducidas, texturas que el exportador no puede leer y canales aproximados. Los nombres aparecen en la ventana local; el JSON exportado conserva alias, sin nombres de materiales ni rutas de texturas. La revisión es limitada: ausencia de incidencias no certifica equivalencia con Arnold.
+
+Estas herramientas se ejecutan al solicitarlas. El registro de solicitudes usa una cola limitada de metadatos y no conserva copias de geometría. No cambian parámetros de materiales, cámara, luces ni calidad de render y no activan Blender para revisar materiales. Para comparar rendimiento, mantén la misma escena y calidad, separa captura de interacción y desactiva la resolución adaptativa si quieres medir Full HD real. Se incluyen en el instalador 0.6.12.
+
+El plan completo está en [DEFICIENCIAS_Y_MEJORAS.md](DEFICIENCIAS_Y_MEJORAS.md).
+
+### Actualización de luces sin trabajo redundante (0.6.12)
+
+Mover una luz o cambiar intensidad, cono o penumbra conserva sus colecciones de light linking y shadow linking cuando sus miembros siguen siendo iguales. Los vínculos se inicializan para luces nuevas y se actualizan al cambiar receptores, bloqueadores o reconstruir la escena. Esto también evita repetir el trabajo en las luces auxiliares del dropoff de Spot. No cambia muestras, resolución ni modelo de iluminación.
+
+También se evita escribir de nuevo la visibilidad de luces y de la luz predeterminada cuando ya tienen el estado solicitado. Se conservan los modos nativos de luces seleccionadas, predeterminadas, iluminación plana y sin luces.
+
+Se compararon doce casos contra la ruta anterior con imágenes idénticas, incluidos receptores vacíos, vínculos de sombras, eliminación/recreación de luces auxiliares y modos nativos de iluminación. La prueba también exige que los cambios reales de vínculos alteren la imagen. En una escena sintética de 400 mallas, la mediana de `sync_lights` pasó de aproximadamente 1,94 a 0,25 ms, con 50 muestras por ruta tras calentamiento. Es una medición de esa función en Blender; no certifica una mejora equivalente de FPS ni 30 FPS en producción.
+
+### Estado del viewport
+
 - Integración en el menú Renderer de Maya con su cuadradito de opciones. Los ajustes pueden abrirse sin arrancar Blender y permanecen abiertos al activar o desactivar Eevee. El menú superior Eevee conserva ajustes, recarga y actualizaciones; ya no ofrece los dos modos de apertura de panel.
 - Indicador animado dentro del viewport hasta recibir la primera imagen: muestra inicio, lectura de escena, materiales, geometría y preparación de shaders, con contadores reales cuando están disponibles y tiempo transcurrido. No estima un porcentaje ni tiempo restante. Cambiar a Viewport 2.0 cancela el arranque; los fallos muestran un mensaje en el viewport.
 - Mallas evaluadas de Maya, cambios de puntos, normales, matrices y visibilidad. Maya ejecuta skinClusters, blendShapes, rigs y pesos pintados.
@@ -80,6 +99,14 @@ Con `mayapy` también puedes ejecutar `tests/distribution/probe_scene_changes.py
 
 `probe_native_startup.py` comprueba el menú Renderer y su cuadradito, la animación, cancelación y errores de inicio. `probe_startup_playblast.py` compara una captura pedida antes de terminar el arranque con la misma captura del motor ya iniciado.
 
+`probe_material_audit.py` se ejecuta con `mayapy` en un proceso independiente. Crea una escena genérica temporal y comprueba detección de conexiones, texturas y canales, además de que la revisión conserva selección, tiempo, estado de modificación y Undo. No se conecta al Maya abierto del usuario.
+
+`probe_diagnostics_gui.py` verifica las acciones reales del menú, la ventana y exportación de diagnósticos, y la presentación GPU en un perfil gráfico dedicado. Requiere `MAYA_APP_DIR` apuntando a un perfil nuevo llamado `diagnostics_regression_profile` y `EEVEE_DIAGNOSTICS_PROBE` a su carpeta padre. No se debe ejecutar dentro de una sesión de trabajo.
+
+`probe_light_link_updates.py` se ejecuta con Blender en background. Compara el resultado de los vínculos antes y después de la optimización con renders de una escena genérica, y mide únicamente el coste de sincronizar luces.
+
+`probe_release_gui.py` requiere un perfil gráfico nuevo `release_regression_profile`, `EEVEE_RELEASE_PROBE` apuntando a su carpeta padre y `EEVEE_PRODUCTION_SCENE` al archivo autorizado de prueba. Comprueba PNG/AVI Full HD, captura en frío y poses/captura de la escena suministrada sin guardarla ni ejecutar sus script nodes. No se ejecuta en la sesión de trabajo del usuario.
+
 Los artefactos quedan en `dist/`. Para publicar una nueva actualización:
 
 1. Modifica el código y aumenta `__version__` en `scripts/eevee_maya/__init__.py`.
@@ -87,7 +114,7 @@ Los artefactos quedan en `dist/`. Para publicar una nueva actualización:
 3. Con GitHub CLI autenticado, publica una versión nueva con sus notas:
 
 ```powershell
-./tools/publish_release.ps1 -Version 0.6.11 -NotesFile ./release-notes.md
+./tools/publish_release.ps1 -Version 0.6.12 -NotesFile ./release-notes.md
 ```
 
 El script construye los artefactos, sube `main` y crea el release. No reemplaza versiones ya publicadas. Los usuarios recibirán la oferta al volver a cargar Maya o al pulsar Buscar actualizaciones. También existe el workflow manual **Publicar versión** en GitHub Actions. Cada release conserva ZIP, instalador y SHA256SUMS.txt.

@@ -35,8 +35,8 @@ def run():
     if not c.presented_once or c.force or c.engine.received_id!=c.engine.sent_id:return
     timer.stop();checks={};results={};not_before={}
     original_poll,original_submit=c.engine.poll,c.engine.submit
-    def submit(snapshot,force=False):
-        sent=original_submit(snapshot,force)
+    def submit(snapshot,force=False,capture=False):
+        sent=original_submit(snapshot,force,capture=capture)
         if sent:not_before[c.engine.sent_id]=time.monotonic()+.15
         return sent
     def poll():

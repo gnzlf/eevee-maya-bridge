@@ -53,6 +53,8 @@ class Engine:
         # manipulator/attribute edits visibly trail Maya's native overlays.
         self.playing = False
         self.history = deque(maxlen=4096)
+        # Numeric metadata only. Diagnostics are built on demand, never per tick.
+        self.request_history = deque(maxlen=4096)
         self.startup_stage = {'stage': 'starting'}
         self.startup_read_at = 0
 
@@ -89,6 +91,7 @@ class Engine:
         self.last_response = {}
         self.frame = self.image = None
         self.history.clear()
+        self.request_history.clear()
         self.signature = None
         self.ready = False
         self.startup_stage = {'stage': 'starting'}
@@ -144,7 +147,7 @@ class Engine:
             self.image = self.session / response["image"]
         self.received_id = response["id"]
         self.last_response = response
-        self.history.append(dict(response))
+        self.history.append(dict(response, received_at=time.perf_counter()))
         self.status = "Eevee %d×%d (%s) | %d mallas | %.1f ms" % (
             response['width'],response['height'],'navegación rápida' if response.get('navigating') else ('previa al editar' if response.get('interactive') else 'calidad completa'),
             response["meshes"], response["seconds"] * 1000)
@@ -159,7 +162,7 @@ class Engine:
                     and (self.request_mailbox.consumed_id >= self.sent_id if self.gpu and self.playing and self.config.get("pipeline", False)
                          else self.sent_id == self.received_id))
 
-    def submit(self, snapshot, force=False):
+    def submit(self, snapshot, force=False, capture=False):
         snapshot = dict(snapshot)
         snapshot.pop("id", None)
         scene_changed = False
@@ -182,6 +185,20 @@ class Engine:
             self.request_mailbox.write(self.sent_id, snapshot)
         else:
             write_json(self.session / "request.json", snapshot)
+        native = snapshot.get('native') or {}
+        effects = snapshot.get('effects') or {}
+        self.request_history.append({
+            'id': self.sent_id, 'submitted_at': snapshot['submitted_at'],
+            'width': snapshot.get('width'), 'height': snapshot.get('height'),
+            'samples': snapshot.get('samples'), 'maya_frame': snapshot.get('maya_frame'),
+            'mode': ('capture' if capture else 'navigation' if snapshot.get('navigating')
+                     else 'playback' if self.playing else 'editing' if snapshot.get('interactive') else 'full_quality'),
+            'effects': {key: bool(effects.get(key)) for key in ('fog', 'bloom')},
+            'dof': bool((snapshot.get('camera') or {}).get('dof')),
+            'shadow_settings': {key: (snapshot.get('shadow_settings') or {}).get(key)
+                                for key in ('preset', 'resolution', 'rays', 'steps', 'pool')},
+            'native': {key: native.get(key) for key in ('shadows', 'ao', 'render_dof', 'displayTextures', 'useDefaultMaterial')},
+        })
         self.signature = signature
         return True
 
