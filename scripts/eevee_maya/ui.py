@@ -583,6 +583,14 @@ def attach(panel=None, *args):
     return _controller
 
 
+def restore_renderer(*args):
+    try:
+        return viewport.register()
+    except RuntimeError as exc:
+        cmds.warning('No se pudo restaurar Renderer > Eevee: ' + str(exc))
+        return None
+
+
 def install_menu():
     if cmds.about(batch=True):
         return
@@ -593,6 +601,7 @@ def install_menu():
     mel.eval('global proc EeveeBridgeOptionBox() { python("from eevee_maya import ui; ui.show_settings()"); }')
     cmds.menu(MENU, label="Eevee", parent=main, tearOff=True)
     cmds.menuItem(label="Ajustes del viewport Eevee", command=show_settings)
+    cmds.menuItem(label='Restaurar opción Renderer > Eevee', command=restore_renderer)
     cmds.menuItem(label="Recargar escena en Eevee", command=refresh)
     from . import diagnostics_ui
     cmds.menuItem(divider=True)

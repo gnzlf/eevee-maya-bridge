@@ -2,6 +2,7 @@
 import maya.cmds as cmds
 import maya.api.OpenMaya as om
 from . import native_controls, shadow_quality
+from . import graphics
 from .ui import QtCore
 
 WINDOW = "eeveeViewportSettings"
@@ -16,12 +17,23 @@ class SettingsWindow:
         self.widgets = {}
         self.camera = None
         self.light = None
+        self.compatibility_only = False
         self.timer = QtCore.QTimer()
         if cmds.window(WINDOW, exists=True): cmds.deleteUI(WINDOW)
         self.window = cmds.window(WINDOW, title="Eevee · Ajustes del viewport", widthHeight=(490, 650), sizeable=True)
         cmds.columnLayout(adjustableColumn=True, rowSpacing=8, columnAttach=("both", 10))
         cmds.text(label="Eevee · " + cmds.modelPanel(self.panel,query=True,camera=True), align="left", font="boldLabelFont", height=28)
         self.status = cmds.text(label="", align="left", height=22)
+        import maya.api.OpenMayaRender as render
+        if render.MRenderer.drawAPI() == render.MRenderer.kDirectX11:
+            self.compatibility_only = True
+            cmds.text(label=graphics.DIRECTX_MESSAGE, align='left', wordWrap=True, height=60)
+            cmds.text(label='El cambio se aplica al siguiente inicio de Maya. Esta ventana no inicia Blender ni modifica tu escena.',
+                      align='left', wordWrap=True, height=55)
+            self.graphics_status = cmds.text(label='', align='left', wordWrap=True, height=55)
+            cmds.button(label='Configurar OpenGL Core Profile para el próximo inicio', command=self.configure_opengl)
+            cmds.showWindow(self.window)
+            return
         tabs = cmds.tabLayout(innerMarginWidth=8, innerMarginHeight=8)
         viewport_tab = cmds.columnLayout(adjustableColumn=True, rowSpacing=6)
         cmds.checkBox(label='Calidad adaptativa al editar o reproducir',
@@ -121,6 +133,14 @@ class SettingsWindow:
     @staticmethod
     def attribute(plug, label):
         if cmds.objExists(plug): return cmds.attrControlGrp(attribute=plug,label=label)
+
+    def configure_opengl(self, *args):
+        try:
+            message = graphics.configure_opengl(cmds)
+        except RuntimeError as exc:
+            cmds.warning('No se pudo guardar la preferencia gráfica: ' + str(exc))
+            return
+        cmds.text(self.graphics_status, edit=True, label=message)
 
     def set_panel(self, flag, value):
         cmds.modelEditor(self.panel,edit=True,**{flag:bool(value)})
@@ -231,6 +251,8 @@ class SettingsWindow:
 
     def refresh(self):
         from . import ui
+        if self.compatibility_only:
+            return
         if not cmds.window(WINDOW,exists=True): self.timer.stop(); return
         if not cmds.modelPanel(self.panel,exists=True):
             self.timer.stop()

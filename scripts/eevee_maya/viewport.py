@@ -235,6 +235,36 @@ class LoadingBackground(CaptureFailure):
         return operation
 
 
+class GraphicsNotice(render.MHUDRender):
+    """Native, API-independent notice; DirectX never reaches the GL bridge."""
+    def __init__(self):
+        super().__init__()
+        self.draws = 0
+
+    def execute(self, context):
+        pass
+
+    def hasUIDrawables(self):
+        return True
+
+    def addUIDrawables(self, draw, context):
+        import maya.api.OpenMaya as om
+        _, _, width, height = context.getViewportDimensions()
+        x, y = width * .5, height * .5
+        draw.beginDrawable(render.MUIDrawManager.kNonSelectable)
+        draw.setColor(om.MColor((.95, .75, .3, 1)))
+        draw.setFontSize(20)
+        draw.text2d(om.MPoint(x, y + 35), 'Eevee necesita OpenGL Core Profile', render.MUIDrawManager.kCenter)
+        draw.setColor(om.MColor((.92, .94, .98, 1)))
+        draw.setFontSize(12)
+        draw.text2d(om.MPoint(x, y + 5), 'Maya está usando DirectX 11.', render.MUIDrawManager.kCenter)
+        draw.text2d(om.MPoint(x, y - 20), 'Abre el cuadradito junto a Renderer > Eevee para configurar OpenGL.', render.MUIDrawManager.kCenter)
+        draw.text2d(om.MPoint(x, y - 45), 'Guarda tu trabajo y reinicia Maya después del cambio.', render.MUIDrawManager.kCenter)
+        draw.text2d(om.MPoint(x, y - 80), 'Renderer > Viewport 2.0 para volver', render.MUIDrawManager.kCenter)
+        draw.endDrawable()
+        self.draws += 1
+
+
 class Loading(render.MHUDRender):
     def __init__(self):
         super().__init__()
@@ -299,6 +329,7 @@ class Override(render.MRenderOverride):
         self.capture_failure = CaptureFailure()
         self.loading_background = LoadingBackground()
         self.loading = Loading()
+        self.graphics_notice = GraphicsNotice()
         self.operations = []
         self.index = 0
         self.has_image = False
@@ -309,12 +340,17 @@ class Override(render.MRenderOverride):
         return "Eevee"
 
     def supportedDrawAPIs(self):
-        # Copy.ogsfx ships with Maya and runs on its OpenGL renderer.
-        return render.MRenderer.kOpenGL | render.MRenderer.kOpenGLCoreProfile
+        # DX support is ONLY the native compatibility notice. Shared textures
+        # and Eevee drawing remain OpenGL-only and are guarded in setup().
+        return render.MRenderer.kOpenGL | render.MRenderer.kOpenGLCoreProfile | render.MRenderer.kDirectX11
 
     def setup(self, destination):
         self.destination = destination
         from . import ui, capture
+        if render.MRenderer.drawAPI() == render.MRenderer.kDirectX11:
+            self.operations = ([self.capture_failure, self.present] if capture.active()
+                               else [self.loading_background, self.graphics_notice, self.present])
+            return
         if capture.active() and ui._controller is not None and ui._controller.capture_error:
             self.operations = [self.capture_failure, self.present]
             return

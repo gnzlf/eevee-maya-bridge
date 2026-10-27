@@ -77,13 +77,18 @@ def initializePlugin(obj):
 
 def _write_diagnostic(result):
     """Logging must never prevent loading, including read-only module folders."""
-    result = dict(result, plugin=str(ROOT / "plug-ins" / "eeveeBridge.py"), python=sys.version)
+    import maya.cmds as cmds
+    result = dict(result, plugin=str(ROOT / "plug-ins" / "eeveeBridge.py"), python=sys.version,
+                  pid=os.getpid(), batch=bool(cmds.about(batch=True)))
     base = Path(os.environ.get("LOCALAPPDATA") or tempfile.gettempdir()) / "EeveeMayaBridge" / "diagnostics"
     for directory in (base, Path(tempfile.gettempdir()) / "EeveeMayaBridge-diagnostics"):
         try:
             directory.mkdir(parents=True, exist_ok=True)
-            target = directory / "plugin_load.json"
+            target = directory / ('plugin_load.%d.json' % os.getpid())
             target.write_text(json.dumps(result, indent=2, ensure_ascii=True), encoding="utf-8")
+            # Batch/installer probes must not replace the last GUI status.
+            if not result['batch']:
+                (directory / 'plugin_load.json').write_text(json.dumps(result, indent=2, ensure_ascii=True), encoding='utf-8')
             return target
         except OSError:
             continue
@@ -94,15 +99,35 @@ def _install_menu():
     if not _active:
         return
     try:
-        from eevee_maya import ui, viewport
-        import maya.api.OpenMayaRender as render
+        from eevee_maya import ui
         ui.install_menu()
-        if render.MRenderer.drawAPI() != render.MRenderer.kDirectX11:
-            viewport.register()
     except Exception:
         detail = traceback.format_exc()
         location = _write_diagnostic({"ok": False, "stage": "menu", "error": detail})
         om.MGlobal.displayError("Eevee: " + detail + "\nDiagnóstico: " + str(location))
+        return
+    _register_renderer()
+
+
+def _register_renderer(attempt=0):
+    if not _active:
+        return
+    from eevee_maya import ui, viewport, __version__
+    import maya.api.OpenMayaRender as render
+    try:
+        viewport.register()
+        _write_diagnostic({'ok': True, 'stage': 'renderer', 'version': __version__,
+                           'draw_api': int(render.MRenderer.drawAPI()),
+                           'opengl_restart_required': render.MRenderer.drawAPI() == render.MRenderer.kDirectX11})
+    except RuntimeError:
+        detail = traceback.format_exc()
+        location = _write_diagnostic({'ok': False, 'stage': 'renderer', 'attempt': attempt + 1, 'error': detail})
+        # During auto-load VP2 can exist before its native renderer is ready.
+        # Retry registration without recreating menus, selecting Eevee or starting Blender.
+        if attempt < 4:
+            ui.QtCore.QTimer.singleShot(min(500 * (attempt + 1), 2000), lambda: _register_renderer(attempt + 1))
+        else:
+            om.MGlobal.displayError('Eevee no pudo registrar Renderer > Eevee. Usa Eevee > Restaurar opción Renderer > Eevee.\nDiagnóstico: ' + str(location))
 
 
 def uninitializePlugin(obj):

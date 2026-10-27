@@ -36,7 +36,9 @@ def diagnose():
         result['error'] = traceback.format_exc()
     base = Path(os.environ.get('LOCALAPPDATA') or tempfile.gettempdir()) / 'EeveeMayaBridge' / 'diagnostics'
     base.mkdir(parents=True, exist_ok=True)
-    previous = base / 'plugin_load.json'
+    previous = base / ('plugin_load.%d.json' % os.getpid())
+    if not previous.exists():
+        previous = base / 'plugin_load.json'
     if previous.exists():
         try:
             result['last_startup'] = json.loads(previous.read_text(encoding='utf-8'))

@@ -1,6 +1,6 @@
 # Eevee Maya Bridge: deficiencias y plan de mejora
 
-**Actualizado:** 27 de octubre de 2026. **Base revisada:** bridge 0.6.12, Maya 2024 y Blender 5.2.0 en Windows.
+**Actualizado:** 27 de octubre de 2026. **Base revisada:** bridge 0.6.13, Maya 2024 y Blender 5.2.0 en Windows.
 
 Este informe describe el estado del código y las verificaciones disponibles. Distingue funciones implementadas, compatibilidad parcial y propuestas pendientes. Las metas de rendimiento son objetivos de desarrollo, no resultados ya alcanzados.
 
@@ -23,6 +23,8 @@ La validación incluye pruebas automatizadas, doce comprobaciones de interfaz gr
 Para la distribución 0.6.12 pasaron las 77 pruebas automatizadas con la prueba de instalación activada, además de ocho comprobaciones del plugin instalado y sus DLL. Se verificaron captura PNG/AVI a 1920 × 1080, captura en frío y una escena de producción de 566 mallas en un proceso de Maya dedicado. La prueba de producción conserva el archivo original; sigue sin certificar 30 FPS.
 
 ## 1. Diagnóstico principal
+
+**Corrección de registro en 0.6.13:** antes se omitía el registro del renderer en DirectX 11 y no se reintentaba si Viewport 2.0 aún no estaba listo. Ahora se registra una entrada de compatibilidad visible en DirectX, con aviso nativo y configuración explícita de OpenGL para el siguiente inicio. No utiliza el transporte OpenGL desde DirectX. Se añaden reintentos acotados y una opción manual para restaurar el registro. La prueba gráfica comprueba catorce condiciones con DirectX real y ocho con OpenGL tras reiniciar el perfil de prueba. Los registros por proceso evitan confundir los diagnósticos de las pruebas batch con los del Maya del usuario.
 
 El bridge ya integra Eevee en el menú Renderer de Maya, pero todavía no ofrece equivalencia completa con los materiales, cámaras y luces de Maya/Arnold, ni ha demostrado 30 FPS sostenidos a 1920 × 1080 con todos los efectos en una escena grande.
 

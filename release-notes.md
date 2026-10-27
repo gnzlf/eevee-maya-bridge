@@ -1,13 +1,11 @@
-Edición de luces con menos trabajo repetido y diagnóstico desde Maya.
+Corrección de la opción Renderer > Eevee en Maya.
 
-- Se conservan las colecciones de light linking y shadow linking al mover una luz o cambiar intensidad, cono o penumbra si sus miembros siguen iguales. Los cambios de vínculos, listas vacías, luces nuevas y reconstrucciones de escena mantienen su actualización.
-- Se evitan escrituras repetidas de visibilidad cuando las luces ya tienen el estado solicitado. Se conservan los modos nativos de luces seleccionadas, predeterminadas, iluminación plana y sin luces.
-- Eevee > Guardar diagnóstico de rendimiento guarda resolución efectiva, muestras, fotogramas nuevos, tiempos y modo de interacción o captura. No cuenta redibujos repetidos como nuevos fotogramas; señala mezclas de calidad y distingue el tiempo de envío a dibujo de la latencia completa del usuario.
-- Eevee > Revisar materiales (solo lectura) detecta familias sin traductor específico, conexiones no traducidas, texturas ausentes y canales aproximados. La ventana muestra nombres locales; el informe exportado usa alias y omite rutas de texturas. No modifica materiales ni certifica equivalencia con Arnold.
-- Se incluye DEFICIENCIAS_Y_MEJORAS.md con limitaciones, evidencia y prioridades de desarrollo.
+- Eevee vuelve a registrarse también cuando Maya utiliza DirectX 11. En ese modo muestra un aviso nativo y su cuadradito abre la configuración de OpenGL Core Profile para el siguiente inicio. El render de Eevee sigue requiriendo OpenGL; la entrada DirectX es una guía de compatibilidad.
+- El botón de configuración guarda la preferencia cuando lo pulsas. No cambia el contexto gráfico, modifica escenas, guarda proyectos ni cierra Maya. Guarda tu trabajo y reinicia después. Si MAYA_VP2_DEVICE_OVERRIDE fuerza DirectX, se explica que debe retirarse del lanzador o de Maya.env.
+- Se reintenta el registro si Viewport 2.0 aún no está listo al cargar el plugin. Los reintentos son limitados y se cancelan al descargarlo. Eevee > Restaurar opción Renderer > Eevee permite volver a registrar la opción sin arrancar Blender.
+- El aviso DirectX evita iniciar el proceso Blender o ejecutar operaciones OpenGL en un contexto incompatible. Los intentos de captura en ese modo se marcan como inválidos.
+- Diagnósticos separados por proceso. Las pruebas batch ya no reemplazan el último diagnóstico gráfico; DIAGNOSTICO_EN_MAYA.py prefiere el registro de su propia sesión.
 
-En una prueba sintética de 400 mallas, la mediana de sincronización de luces pasó de aproximadamente 1,94 a 0,25 ms. Doce casos dieron imágenes idénticas entre la ruta anterior y la optimizada. Es una medición de esa función, no una garantía de FPS ni de 30 FPS Full HD en producción. Se conservan las muestras, resolución y efectos seleccionados.
+Verificado en la interfaz real de Maya con DirectX 11 y con OpenGL Core Profile tras reiniciar el perfil de prueba. Incluye las optimizaciones de luces y herramientas de diagnóstico de 0.6.12.
 
-Validación: 77 pruebas automatizadas, incluida instalación/actualización conservando preferencias y rechazo de paquetes corruptos. Se verificaron carga y descarga del plugin instalado, ambas DLL, menús gráficos, playblast PNG/AVI Full HD y coincidencia entre captura en frío y en caliente. También se comprobó una escena de producción de 566 mallas en Maya independiente, con cambio de fotograma y captura Full HD sin modificar el archivo original.
-
-Actualiza desde Eevee > Buscar actualizaciones y reinicia Maya después de guardar tu trabajo. La versión nueva se activa en el siguiente inicio; el instalador conserva las preferencias y la versión anterior.
+Actualiza desde Eevee > Buscar actualizaciones, guarda tu trabajo y reinicia Maya. Comprueba en Plug-in Manager que eeveeBridge.py esté Loaded; activa Auto load si quieres conservarlo en siguientes inicios. Después elige Renderer > Eevee. Si aparece el aviso DirectX, abre su cuadradito y configura OpenGL Core Profile para el próximo inicio.

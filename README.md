@@ -10,13 +10,17 @@ Viewport experimental de **Blender Eevee dentro de un panel de Maya 2024** en Wi
 4. Reinicia Maya. En **Windows > Settings/Preferences > Plug-in Manager**, carga `eeveeBridge.py`. Autoriza su ubicación si Maya lo pide; **Auto load** es opcional.
 5. En el propio viewport, elige **Renderer > Eevee**. El cuadradito a su derecha abre los ajustes, incluso antes de iniciar el motor. Para salir, selecciona **Renderer > Viewport 2.0**.
 
-Maya debe utilizar OpenGL/OpenGL Core Profile. Si usa DirectX 11, cambia el motor en Preferences > Display y reinicia Maya. Probado con Maya 2024.2, Blender 5.2.0 LTS y RTX 3070. No utiliza CUDA ni núcleos RTX; el transporte actual requiere interoperabilidad WGL/D3D11 y solo se ha certificado en esta GPU/controlador NVIDIA. Otras versiones de Maya requieren recompilar y validar `eevee_scene.dll` con su SDK.
+El render de Eevee requiere OpenGL/OpenGL Core Profile. Desde 0.6.13, **Renderer > Eevee permanece visible también en DirectX 11**: muestra un aviso nativo y el cuadradito abre una ventana para configurar OpenGL Core Profile para el próximo inicio. Pulsa el botón, guarda tu trabajo y reinicia Maya. No cambia el contexto gráfico ni cierra la sesión automáticamente. Esta entrada de compatibilidad no renderiza Eevee con DirectX. Si una variable `MAYA_VP2_DEVICE_OVERRIDE` fuerza DirectX, la ventana indica que debe retirarse del lanzador o de Maya.env; no modifica esa variable automáticamente. [Configuración de Autodesk](https://help.autodesk.com/cloudhelp/2023/ENU/Maya-Rendering/files/GUID-EE108A86-9830-455E-BF2F-64A4075E8303.htm).
+
+Probado con Maya 2024.2, Blender 5.2.0 LTS y RTX 3070. No utiliza CUDA ni núcleos RTX; el transporte actual requiere interoperabilidad WGL/D3D11 y solo se ha certificado en esta GPU/controlador NVIDIA. Otras versiones de Maya requieren recompilar y validar `eevee_scene.dll` con su SDK.
+
+Si Eevee no aparece en Renderer, comprueba que `eeveeBridge.py` esté **Loaded** en Plug-in Manager. **Auto load** conserva la carga en próximos inicios. Con el plugin cargado puedes usar **Eevee > Restaurar opción Renderer > Eevee**; registra la opción sin arrancar Blender ni modificar la escena. El arranque automático también reintenta el registro si Viewport 2.0 todavía no está listo.
 
 El instalador se entrega sin firma de código. Blender conserva sus avisos originales; consulta [componentes externos](THIRD_PARTY_NOTICES.md).
 
 Si la versión 0.6.2 muestra `Unexpected Internal Failure` al descargar/cargar el plug-in, cierra Maya después de guardar tu trabajo, instala 0.6.3 o posterior y vuelve a iniciarlo. Se corrigió la limpieza de comandos tras fallos de Viewport 2.0 y se separó la carga del plug-in del registro gráfico en Maya. No es necesario borrar las preferencias de Maya.
 
-Los errores detallados se guardan en `%LOCALAPPDATA%\EeveeMayaBridge\diagnostics\plugin_load.json`. Para obtener información de GPU y versión de Maya, arrastra `DIAGNOSTICO_EN_MAYA.py` desde la carpeta de la versión instalada a un viewport. Guarda `installation_report.json` en esa misma carpeta de diagnóstico; no abre ni guarda escenas.
+Los errores detallados se guardan en `%LOCALAPPDATA%\EeveeMayaBridge\diagnostics\plugin_load.<PID>.json`, uno por proceso. Se conserva `plugin_load.json` para compatibilidad con diagnósticos anteriores; las pruebas batch ya no sustituyen ese último estado gráfico. Para obtener información de GPU y versión de Maya, arrastra `DIAGNOSTICO_EN_MAYA.py` desde la carpeta de la versión instalada a un viewport. Prefiere el registro del proceso actual y guarda `installation_report.json` en esa misma carpeta de diagnóstico; no abre ni guarda escenas.
 
 ## Actualizar
 
@@ -107,6 +111,8 @@ Con `mayapy` también puedes ejecutar `tests/distribution/probe_scene_changes.py
 
 `probe_release_gui.py` requiere un perfil gráfico nuevo `release_regression_profile`, `EEVEE_RELEASE_PROBE` apuntando a su carpeta padre y `EEVEE_PRODUCTION_SCENE` al archivo autorizado de prueba. Comprueba PNG/AVI Full HD, captura en frío y poses/captura de la escena suministrada sin guardarla ni ejecutar sus script nodes. No se ejecuta en la sesión de trabajo del usuario.
 
+`probe_renderer_visibility_gui.py` usa un perfil nuevo `renderer_regression_profile`, `EEVEE_RENDERER_PROBE` con su carpeta padre y `EEVEE_RENDERER_PROBE_MODE=dx` o `gl`. Comprueba el registro diferido real, el menú nativo, el aviso DirectX sin iniciar Blender, el cambio explícito de preferencia y la activación con OpenGL tras reiniciar la sesión de prueba. Para forzar el backend DX en la prueba puede usarse `MAYA_VP2_DEVICE_OVERRIDE=VirtualDeviceDx11`; debe retirarse para la fase OpenGL. No se ejecuta en la sesión de trabajo del usuario.
+
 Los artefactos quedan en `dist/`. Para publicar una nueva actualización:
 
 1. Modifica el código y aumenta `__version__` en `scripts/eevee_maya/__init__.py`.
@@ -114,7 +120,7 @@ Los artefactos quedan en `dist/`. Para publicar una nueva actualización:
 3. Con GitHub CLI autenticado, publica una versión nueva con sus notas:
 
 ```powershell
-./tools/publish_release.ps1 -Version 0.6.12 -NotesFile ./release-notes.md
+./tools/publish_release.ps1 -Version 0.6.13 -NotesFile ./release-notes.md
 ```
 
 El script construye los artefactos, sube `main` y crea el release. No reemplaza versiones ya publicadas. Los usuarios recibirán la oferta al volver a cargar Maya o al pulsar Buscar actualizaciones. También existe el workflow manual **Publicar versión** en GitHub Actions. Cada release conserva ZIP, instalador y SHA256SUMS.txt.

@@ -33,6 +33,12 @@ def _changed(playing, *args):
     from . import ui, viewport
     import maya.cmds as cmds
     if playing and ui._controller is None:
+        import maya.api.OpenMayaRender as render
+        if render.MRenderer.drawAPI() == render.MRenderer.kDirectX11:
+            # The DX renderer entry is an explanatory placeholder, never a
+            # valid Eevee capture. setup() marks its attempted captures red.
+            cmds.warning('Eevee no puede capturar en DirectX 11. Configura OpenGL Core Profile y reinicia Maya.')
+            return
         # Selecting Eevee from Maya's renderer menu is also an activation.
         panels = cmds.getPanel(type='modelPanel') or []
         focused = cmds.getPanel(withFocus=True)
