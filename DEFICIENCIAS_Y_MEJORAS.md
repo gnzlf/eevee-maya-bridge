@@ -1,6 +1,6 @@
 # Eevee Maya Bridge: deficiencias y plan de mejora
 
-**Actualizado:** 27 de octubre de 2026. **Base revisada:** bridge 0.6.15, Maya 2024 y Blender 5.2.0 en Windows.
+**Actualizado:** 28 de octubre de 2026. **Base revisada:** bridge 0.6.16, Maya 2024 y Blender 5.2.0 en Windows.
 
 Este informe describe el estado del código y las verificaciones disponibles. Distingue funciones implementadas, compatibilidad parcial y propuestas pendientes. Las metas de rendimiento son objetivos de desarrollo, no resultados ya alcanzados.
 
@@ -194,6 +194,8 @@ Prioridades: compartir mallas instanciadas, evitar copias redundantes, separar t
 NURBS, pelo, partículas, proxies Arnold/USD, VDB, displacement, isolate select y motion blur no tienen soporte completo certificado. Deben incorporarse como tareas independientes, con conversión o backend definidos y pruebas de fidelidad. No son funciones que aparezcan automáticamente al instalar dependencias.
 
 ### 4.10 Integración nativa, captura y distribución
+
+**Corregido en 0.6.16:** la reconstrucción del FOV omitía overscan y no representaba todas las transformaciones de la película. Esto podía hacer que Eevee pareciera acercar la cámara. El viewport GPU ahora lee proyección, vista y cámara del `MFrameContext` de Maya antes de dibujar; cancela la convención de vista para conservar las distancias del bridge en unidades de mundo. El color y la profundidad usan la misma proyección. La captura se sincroniza con ese contexto, con la relación de aspecto de su destino. Las pruebas comparan siluetas reales de VP2 y Eevee en doce configuraciones, incluida cámara ortográfica escalada, y alternan ambos renderers en el mismo panel. Se conservan atributos y matriz mundial de la cámara. Una operación final marca en rojo los fallos de captura detectados después de preparar la lista de dibujo. El backend de imagen separado conserva la aproximación de frustum; estas comprobaciones corresponden al viewport GPU.
 
 **Ya implementado en 0.6.11:** selección desde Renderer > Eevee, cuadradito nativo de opciones, ajustes sin arrancar Blender, indicador animado con etapas reales, cancelación al volver a Viewport 2.0 y errores dentro del viewport. No corresponde volver a presentar estas funciones como pendientes.
 

@@ -12,6 +12,56 @@ NAME = "EeveeBridge"
 _override = None
 
 
+class CameraSync(render.MUserRenderOperation):
+    """Read VP2's actual projection for this draw, including playblast targets."""
+    def __init__(self, owner):
+        super().__init__('EeveeNativeCameraSync')
+        self.owner = owner
+
+    def execute(self, context):
+        from . import ui, capture
+        controller = ui._controller
+        if controller is None or controller.panel != self.owner.destination:
+            return
+        path = context.getCurrentCameraPath()
+        frame = {'path': path.fullPathName(), 'matrix': list(path.inclusiveMatrix()),
+                 'projection': list(context.getMatrix(render.MFrameContext.kProjectionMtx)),
+                 'view': list(context.getMatrix(render.MFrameContext.kViewMtx)),
+                 'size': list(context.getViewportDimensions()[2:])}
+        controller.viewport_camera = frame
+        if capture.active():
+            controller.before_draw(frame)
+        else:
+            controller.tick(refresh=False)
+
+
+class CaptureGuard(render.MUserRenderOperation):
+    """Mark late capture errors after the queued image/UI operations finish."""
+    def __init__(self):
+        super().__init__('EeveeCaptureGuard')
+
+    def execute(self, context):
+        from . import ui, capture
+        if not capture.active() or ui._controller is None or not ui._controller.capture_error:
+            return
+        # Maya can prepare the operation list before CameraSync runs, so a
+        # late timeout cannot be handled by changing that list. Clear the bound
+        # OpenGL capture target here, preserving its caller's clear/write state.
+        gl=ctypes.WinDLL('opengl32')
+        gl.glClearColor.argtypes=[ctypes.c_float]*4
+        gl.glColorMask.argtypes=[ctypes.c_ubyte]*4
+        gl.glIsEnabled.restype=ctypes.c_ubyte
+        color=(ctypes.c_float*4)();mask=(ctypes.c_ubyte*4)()
+        gl.glGetFloatv(0x0C22,color);gl.glGetBooleanv(0x0C23,mask)
+        scissor=gl.glIsEnabled(0x0C11)
+        try:
+            gl.glDisable(0x0C11);gl.glColorMask(1,1,1,1)
+            gl.glClearColor(.7,0,0,1);gl.glClear(0x00004000)
+        finally:
+            gl.glClearColor(*color);gl.glColorMask(*mask)
+            if scissor:gl.glEnable(0x0C11)
+
+
 class GPUImage(render.MUserRenderOperation):
     """Draw our shared textures in Maya's supplied GL context, preserving its state."""
     def __init__(self):
@@ -330,6 +380,8 @@ class Override(render.MRenderOverride):
         self.loading_background = LoadingBackground()
         self.loading = Loading()
         self.graphics_notice = GraphicsNotice()
+        self.camera_sync = CameraSync(self)
+        self.capture_guard = CaptureGuard()
         self.operations = []
         self.index = 0
         self.has_image = False
@@ -370,14 +422,14 @@ class Override(render.MRenderOverride):
                     finally:
                         self.pending_attach = False
                 cmds.evalDeferred(attach_selected_panel)
-        elif not capture.active() and ui._controller is not None:
-            # Native navigation can draw while Qt timers are delayed. Update
-            # the textures for this draw without requesting a recursive redraw.
-            ui._controller.tick(refresh=False)
         controller = ui._controller
+        if capture.active() and controller is not None:
+            image = self.gpu_image if controller.engine.gpu else self.quad
+            self.operations = [self.camera_sync, image, self.overlay, self.capture_guard, self.present]
+            return
         if (not capture.active() and controller is not None and controller.panel == destination
                 and not controller.presented_once and (controller.startup_error or self.gpu_image.error)):
-            self.operations = [self.loading_background, self.loading, self.present]
+            self.operations = [self.camera_sync, self.loading_background, self.loading, self.present]
             return
         image = self.gpu_image if self.gpu_image.frame else self.quad
         self.operations = ([image, self.overlay, self.present] if self.has_image
@@ -388,6 +440,7 @@ class Override(render.MRenderOverride):
             self.operations = [self.fallback, self.present]
         elif self.has_image and self.native.get("wireframeOnShaded"):
             self.operations = [image, self.wire_overlay, self.overlay, self.present]
+        self.operations.insert(0, self.camera_sync)
 
     def cleanup(self):
         pass

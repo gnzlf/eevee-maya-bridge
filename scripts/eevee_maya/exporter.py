@@ -181,9 +181,11 @@ def camera(camera_name, width, height):
     if path.node().hasFn(om.MFn.kTransform):
         path.extendToShape()
     fn = om.MFnCamera(path)
-    # Maya viewport film fit is represented by the effective horizontal FOV.
-    left, right, bottom, top = fn.getViewingFrustum(float(width) / height)
+    # Fallback for callers outside a VP2 draw. Native viewports supply their
+    # complete frame-context projection, including gates and film transforms.
+    left, right, bottom, top = fn.getViewingFrustum(float(width) / height, True, True, True)
     return {
+        "path": path.fullPathName(),
         "matrix": matrix_values(path.inclusiveMatrix()),
         "orthographic": fn.isOrtho(),
         "ortho_width": right - left if fn.isOrtho() else fn.orthoWidth,

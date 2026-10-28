@@ -280,7 +280,7 @@ def tick():
         update_started = time.perf_counter()
         bpy.context.view_layer.update()
         update_finished = time.perf_counter()
-        projection = cam.calc_matrix_camera(bpy.context.evaluated_depsgraph_get(), x=width, y=height)
+        projection = worker.camera_projection(cam,request['camera'],width,height)
         view = cam.matrix_world.inverted()
         startup_progress('shaders')
         state["offscreen"].draw_view3d(scene, bpy.context.view_layer, state["space"], state["region"],

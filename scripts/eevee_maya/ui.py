@@ -299,6 +299,9 @@ class Controller:
         # Shared by interactive frames and the strict native playblast path.
         data['shadow_settings'] = shadow_quality.resolve(self.engine.config)
         data['maya_frame'] = cmds.currentTime(query=True)
+        frame_camera = getattr(self, 'viewport_camera', None)
+        if frame_camera and frame_camera['path'] == data['camera']['path']:
+            data['camera']['viewport'] = frame_camera
         return data
 
     def time_changed(self, *args):
@@ -323,6 +326,11 @@ class Controller:
             self.force = True
 
     def before_draw(self, *args):
+        # M3dView's pre-render notification has no frame context. Synchronize
+        # from CameraSync instead, before the image operation is executed.
+        if not args or not isinstance(args[0], dict):
+            return
+        self.viewport_camera = args[0]
         if not capture.active() or self.capture_syncing:
             return
         if not self.capture_active:

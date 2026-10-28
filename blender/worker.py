@@ -414,6 +414,19 @@ def apply_camera(cam,spec):
     return cam
 
 
+def camera_projection(cam, spec, width, height):
+    native = spec.get('viewport')
+    if native:
+        projection = Matrix([native['projection'][i:i+4] for i in range(0,16,4)]).transposed()
+        view = Matrix([native['view'][i:i+4] for i in range(0,16,4)]).transposed() @ CONVERSION.inverted()
+        # The bridge keeps its view distances in world units for DOF/depth.
+        # Cancel Maya's view convention using the camera sampled with that
+        # context; this also handles inherited camera scale without a zoom.
+        source_world = transform(native['matrix']).normalized()
+        return projection @ view @ source_world
+    return cam.calc_matrix_camera(bpy.context.evaluated_depsgraph_get(), x=width, y=height)
+
+
 def render(request, output):
     configure_color(request)
     if any(light['kind']=='ambientLight' for light in request['lights']):
