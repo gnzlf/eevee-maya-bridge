@@ -1,6 +1,6 @@
 # Eevee Maya Bridge: deficiencias y plan de mejora
 
-**Actualizado:** 28 de octubre de 2026. **Base revisada:** bridge 0.6.19, Maya 2024 y Blender 5.2.0 en Windows.
+**Actualizado:** 28 de octubre de 2026. **Base revisada:** bridge 0.6.20, Maya 2024 y Blender 5.2.0 en Windows.
 
 Este informe describe el estado del código y las verificaciones disponibles. Distingue funciones implementadas, compatibilidad parcial y propuestas pendientes. Las metas de rendimiento son objetivos de desarrollo, no resultados ya alcanzados.
 
@@ -23,6 +23,10 @@ La validación incluye pruebas automatizadas, doce comprobaciones de interfaz gr
 Para la distribución 0.6.12 pasaron las 77 pruebas automatizadas con la prueba de instalación activada, además de ocho comprobaciones del plugin instalado y sus DLL. Se verificaron captura PNG/AVI a 1920 × 1080, captura en frío y una escena de producción de 566 mallas en un proceso de Maya dedicado. La prueba de producción conserva el archivo original; sigue sin certificar 30 FPS.
 
 ## 1. Diagnóstico principal
+
+**Corrección de Spot/Point en 0.6.20:** al multiplicar la vista nativa y su compensación dentro de la proyección se generaba un residuo en el elemento que Eevee utiliza para distinguir perspectiva de ortográfica. El resultado podía ser un personaje negro salvo por una pequeña región iluminada, aunque Directional funcionara. Ahora se envían juntas las matrices nativas de vista y proyección; color y profundidad usan el mismo par. La prueba compara capturas contra Viewport 2.0 en el mismo panel y cubre cámaras trasladadas/rotadas, escala, lente, film fit, gates, pan/zoom y ortográfica, sin escribir parámetros en la cámara de Maya.
+
+También se calcula un alcance finito de Spot/Point a partir de sus receptores visibles y de la atmósfera, para evitar el recorte automático de luces tenues. No se aumenta la energía según el movimiento de la geometría. Se conservan intensidad, Center of Illumination y la limitación del decaimiento no cuadrático. Las pruebas de superficies separan la iluminación de la atmósfera y exigen cobertura del personaje usando una referencia Directional, para no confundir un pequeño parche luminoso o un icono con un resultado correcto. No se certifica equivalencia fotométrica con Maya/Arnold ni mejora de FPS.
 
 **Corrección de registro en 0.6.13:** antes se omitía el registro del renderer en DirectX 11 y no se reintentaba si Viewport 2.0 aún no estaba listo. Ahora se registra una entrada de compatibilidad visible en DirectX, con aviso nativo y configuración explícita de OpenGL para el siguiente inicio. No utiliza el transporte OpenGL desde DirectX. Se añaden reintentos acotados y una opción manual para restaurar el registro. La prueba gráfica comprueba catorce condiciones con DirectX real y ocho con OpenGL tras reiniciar el perfil de prueba. Los registros por proceso evitan confundir los diagnósticos de las pruebas batch con los del Maya del usuario.
 

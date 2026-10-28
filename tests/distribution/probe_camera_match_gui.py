@@ -36,6 +36,7 @@ def camera_state():
 
 
 def capture(label,panel):
+    cmds.modelEditor(panel,edit=True,rendererOverrideName='' if label.endswith('_vp2') else viewport.NAME)
     cmds.playblast(format='image',compression='png',startTime=1,endTime=1,
         filename=str(OUTPUT/label),viewer=False,forceOverwrite=True,percent=100,
         widthHeight=(960,540),offScreen=True,showOrnaments=False,editorPanelName=panel)
@@ -57,7 +58,7 @@ def run():
     timer.stop()
     try:
         defaults=state['defaults']
-        cases=[('default',{}),('overscan',{'overscan':1.3}),('wide_lens',{'focalLength':18}),
+        cases=[('default',{}),('offset_camera',{}),('scaled_perspective',{}),('overscan',{'overscan':1.3}),('wide_lens',{'focalLength':18}),
                ('long_lens',{'focalLength':85}),('vertical_fit',{'filmFit':2}),
                ('offset_and_squeeze',{'horizontalFilmOffset':.15,'verticalFilmOffset':-.05,'lensSqueezeRatio':1.5}),
                ('pan_zoom',{'panZoomEnabled':True,'horizontalPan':.1,'verticalPan':-.05,'zoom':.8}),
@@ -67,8 +68,10 @@ def run():
         for label,values in cases:
             for a,value in defaults.items():cmds.setAttr(state['shape']+'.'+a,value)
             for a,value in values.items():cmds.setAttr(state['shape']+'.'+a,value)
-            scale=2 if label=='scaled_orthographic' else 1
+            scale=2 if label in ('scaled_orthographic','scaled_perspective') else 1
             cmds.setAttr(state['camera']+'.scale',scale,scale,scale,type='double3')
+            cmds.setAttr(state['camera']+'.translate',*( (.17,.09,10.07) if label=='offset_camera' else (0,0,10)),type='double3')
+            cmds.setAttr(state['camera']+'.rotate',*( (.25,.7,.13) if label=='offset_camera' else (0,0,0)),type='double3')
             cmds.select(clear=True)
             before=camera_state()
             native=capture(label+'_vp2',state['reference'])
@@ -98,7 +101,6 @@ def run():
 def start():
     global timer
     cmds.file(new=True,force=True)
-    mel.eval('setNamedPanelLayout "Four View"')
     cam,shape=cmds.camera(name='FramingCamera')
     cmds.setAttr(cam+'.translate',0,0,10,type='double3')
     material=cmds.shadingNode('lambert',asShader=True)
@@ -108,7 +110,7 @@ def start():
     for point in ((-1.5,1,0),(1.5,-.5,-1),(.2,-1.5,1)):
         obj=cmds.polyCube(width=.8,height=.8,depth=.8)[0]
         cmds.setAttr(obj+'.translate',*point,type='double3');cmds.sets(obj,edit=True,forceElement=sg)
-    for panel in ('modelPanel1','modelPanel4'):
+    for panel in ('modelPanel4',):
         cmds.modelPanel(panel,edit=True,camera=cam)
         cmds.modelEditor(panel,edit=True,displayLights='all',grid=False,cameras=False,lights=False,
             manipulators=False,selectionHiliteDisplay=False,displayAppearance='smoothShaded',rendererOverrideName='')
@@ -118,7 +120,7 @@ def start():
     for a,v in defaults.items():cmds.setAttr(shape+'.'+a,v)
     cmds.select(clear=True);viewport.register();ui.install_menu();c=ui.attach('modelPanel4')
     c.engine.config.update(max_width=960,adaptive_quality=False)
-    state.update(camera=cam,shape=shape,reference='modelPanel1',controller=c,defaults=defaults,attributes=list(defaults))
+    state.update(camera=cam,shape=shape,reference='modelPanel4',controller=c,defaults=defaults,attributes=list(defaults))
     timer=QtCore.QTimer();timer.timeout.connect(run);timer.start(150)
 
 

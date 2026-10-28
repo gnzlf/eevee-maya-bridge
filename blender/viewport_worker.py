@@ -285,8 +285,7 @@ def tick():
         update_started = time.perf_counter()
         bpy.context.view_layer.update()
         update_finished = time.perf_counter()
-        projection = worker.camera_projection(cam,request['camera'],width,height)
-        view = cam.matrix_world.inverted()
+        view, projection = worker.camera_matrices(cam,request['camera'],width,height)
         startup_progress('shaders')
         state["offscreen"].draw_view3d(scene, bpy.context.view_layer, state["space"], state["region"],
                                       view, projection, do_color_management=True)
@@ -320,7 +319,8 @@ def tick():
                    "incremental_updates": mirror.updates, "width": width, "height": height,
                    "effects": request.get("effects", {}),
                    "camera": request["camera"],
-                   "render_camera":{"near":cam.data.clip_start,"far":cam.data.clip_end,
+                   "render_camera":{"projection_kind":"perspective" if projection[3][3]==0 else "orthographic",
+                                    "near":cam.data.clip_start,"far":cam.data.clip_end,
                                     "view_near":state["space"].clip_start,"view_far":state["space"].clip_end},
                    "native": request.get("native"),
                    "eevee_state": {"samples":scene.eevee.taa_samples,"shadows":scene.eevee.use_shadows,
@@ -341,6 +341,7 @@ def tick():
                                    "light_details":[{"name":o.get("maya_path",o.name),"type":o.data.type,"energy":o.data.energy,
                                                      "diffuse":o.data.diffuse_factor,"specular":o.data.specular_factor,
                                                      "normalize":getattr(o.data,"normalize",None),"cutoff_distance":getattr(o.data,"cutoff_distance",None),
+                                                     "custom_distance":getattr(o.data,'use_custom_distance',False),
                                                      "size_x":getattr(o.data,"size",None),"size_y":getattr(o.data,"size_y",None),
                                                      "shadows":o.data.use_shadow,
                                                      "shadow_angle":getattr(o.data,"angle",None),

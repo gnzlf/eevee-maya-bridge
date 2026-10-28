@@ -1,14 +1,11 @@
-Eevee Maya Bridge 0.6.19 añade ajustes HDRI y corrige recursos GPU al cambiar de resolución.
+Eevee Maya Bridge 0.6.20 corrige las spotlights que dejaban objetos negros con determinadas cámaras.
 
-- Nueva pestaña HDRI en los ajustes del renderer: elegir o crear SkyDome, cargar/reemplazar imagen, mostrar/ocultar fondo, visibilidad del fondo, intensidad, exposición, rotación y resolución de reflejos.
-- Ocultar el fondo conserva luz y reflejos. Los controles utilizan atributos nativos de Maya y se guardan con la escena; admiten Undo y animación. Reemplazar una imagen compartida no altera los mapas de otras luces o materiales.
-- Corrige `OpenSharedResource (HRESULT=0x80070057)` provocado por cambios de tamaño: las texturas anteriores se mantienen hasta que Maya confirma que ya no necesita esos fotogramas. Se reproducía el mismo error al demorar la primera importación de un recurso antiguo después de un resize.
-- Conserva las correcciones de texturas UDIM de 0.6.18.
+- Corrige la conversión de cámara: un residuo numérico hacía que Eevee interpretara una perspectiva como ortográfica y descartara iluminación Spot/Point en casi toda la imagen. Se conserva el par nativo de vista/proyección, el encuadre y los parámetros de cámara de Maya.
+- Spot y Point usan un alcance finito basado en receptores visibles y atmósfera, evitando el recorte prematuro de luces tenues por el umbral automático de Eevee. No cambia la energía de la luz al mover la geometría.
+- Conserva luz seleccionada, vínculos por objeto, sombras, controles HDRI y la corrección de recursos GPU durante cambios de resolución.
 
-El HDRI sigue usando el World de Eevee: no añade light linking por objeto, pesos difuso/especular independientes ni equivalencia completa con los rebotes de Arnold. La corrección GPU cubre la duración de recursos durante resize; no cambia adaptadores ni certifica otros errores de drivers.
+Verificado en una escena de producción suministrada por el usuario, en un Maya separado y sin guardar el archivo original: intensidad 0/1/8, sombras y cambio de fotograma a 1920 × 1080. La validación mide cobertura de superficies mediante una referencia Directional; excluye falsos positivos por iconos o pequeños parches luminosos. También se comprueban cámara trasladada/rotada, escala, lentes, film fit, offsets, gates, pan/zoom y ortográfica contra Viewport 2.0 en el mismo panel.
 
-Las pruebas incluyen importaciones demoradas tras cuatro tamaños GPU, liberación de pools confirmados, controles HDRI nativos, fondo oculto con reflejos, HDR/EXR y capturas Full HD.
+El decaimiento distinto del cuadrático sigue siendo una aproximación calibrada en Center of Illumination. No se certifica equivalencia fotométrica con Arnold ni 30 FPS.
 
-Verificación: 93 pruebas de distribución, 45 comprobaciones HDRI con la ventana de ajustes, 7 comprobaciones de resize GPU, 8 de edición/Undo de las imágenes y 8 de carga/recarga del instalador. Pasan las regresiones de PNG/AVI, arranque en frío y escena de producción sin guardar cambios en el archivo original.
-
-Actualiza desde Eevee > Buscar actualizaciones, guarda tu trabajo y reinicia Maya para cargar el código nuevo.
+Actualiza desde Eevee > Buscar actualizaciones, guarda tu trabajo y reinicia Maya. Si subiste mucho la intensidad para compensar el fallo anterior, redúcela antes de evaluar la luz corregida.

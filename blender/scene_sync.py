@@ -8,6 +8,7 @@ import worker
 from eevee_maya.mesh_packet import records
 from eevee_maya.lighting import same_light_links, set_light_visibility
 from environment import sync_environment
+from eevee_maya.light_range import influence_distance
 
 
 class SceneMirror:
@@ -27,6 +28,8 @@ class SceneMirror:
         self.progress = None
         self.ambient_enabled = False
         self.environment_state = {}
+        self.geometry_revision = 0
+        self.light_bounds = None
 
     def sync_light_links(self,obj,spec):
         meshes={name:mesh for name,mesh in self.objects.items() if mesh.type=='MESH'}
@@ -51,6 +54,9 @@ class SceneMirror:
 
     def update(self, request):
         self.deltas = list(records(request["mesh_delta"])) if request.get("mesh_delta") else []
+        if 'meshes' in request or self.deltas:
+            self.geometry_revision += 1
+            self.light_bounds = None
         if "meshes" in request and any(spec.get("binary_geometry") for spec in request["meshes"]):
             for delta in self.deltas:
                 spec = request["meshes"][delta["index"]]
@@ -128,7 +134,10 @@ class SceneMirror:
         if "native" not in request:
             return
         native = request["native"]
-        signature = (request["lights"], native["displayLights"], native.get("selected_lights", []),native["shadows"])
+        local=any(s['kind'] in ('pointLight','spotLight') for s in request['lights'])
+        signature = (request["lights"], native["displayLights"], native.get("selected_lights", []),native["shadows"],
+                     self.geometry_revision if local else None,request.get('effects',{}).get('fog'),request.get('effects',{}).get('fog_distance'),
+                     request.get('camera',{}).get('matrix') if local and request.get('effects',{}).get('fog') else None)
         if signature == self.light_signature:
             return
         ambient_enabled=any(spec['kind']=='ambientLight' for spec in request['lights'])
@@ -136,7 +145,26 @@ class SceneMirror:
             worker.sync_ambient(self.objects,request['lights'],native)
         self.ambient_enabled=ambient_enabled
         existing = {obj["maya_path"]: obj for obj in bpy.context.scene.objects if obj.type == "LIGHT" and "maya_path" in obj}
-        lights=worker.expand_spot_profiles([s for s in request['lights'] if s['kind'] != 'aiSkyDomeLight'])
+        sources=[]
+        for spec in request['lights']:
+            if spec['kind']=='aiSkyDomeLight':continue
+            if spec['kind'] in ('pointLight','spotLight'):
+                if self.light_bounds is None:
+                    self.light_bounds={}
+                    for name,mesh in self.objects.items():
+                        if mesh.type!='MESH' or mesh.hide_viewport:continue
+                        corners=np.asarray(mesh.bound_box,dtype=np.float64)
+                        matrix=np.asarray(mesh.matrix_world,dtype=np.float64)
+                        points=corners @ matrix[:3,:3].T+matrix[:3,3]
+                        self.light_bounds[name]=(points.min(axis=0).tolist(),points.max(axis=0).tolist())
+                bounds=[self.light_bounds[n] for n in spec.get('receivers',self.light_bounds) if n in self.light_bounds]
+                matrix=worker.transform(spec['matrix']);origin=matrix.translation
+                fog=request.get('effects',{})
+                volume_distance=(float(fog.get('fog_distance',100))+(origin-worker.transform(request['camera']['matrix']).translation).length) if fog.get('fog') else 0
+                distance=influence_distance(origin,bounds,spec.get('decay_reference',5),volume_distance)
+                spec=dict(spec,influence_distance=distance)
+            sources.append(spec)
+        lights=worker.expand_spot_profiles(sources)
         wanted = {spec["name"] for spec in lights}
         for name, obj in existing.items():
             if name not in wanted:

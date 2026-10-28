@@ -257,9 +257,12 @@ def apply_light(obj, spec, previous=None):
             if spec.get('legacy_intensity',False):energy *= 12
         data.energy=energy
     if data.type != "SUN" and previous is None:
-        # A fixed 100000-unit influence range wastes shadow-map precision in
-        # centimetre-scale scenes. Eevee derives its range from light energy.
+        # AREA retains Eevee's automatic range. SceneMirror supplies a finite
+        # receiver range for point/spot lights, independent of their intensity.
         data.use_custom_distance=False
+    if data.type in ('POINT','SPOT') and changed('influence_distance') and spec.get('influence_distance'):
+        data.use_custom_distance=True
+        data.cutoff_distance=spec['influence_distance']
     if changed("diffuse"):data.diffuse_factor = float(spec.get("diffuse", True))
     if changed("specular"):data.specular_factor = 0 if spec['kind']=='ambientLight' else float(spec.get("specular", True))
     if changed("volume","volume_factor"):data.volume_factor = max(0,spec.get("volume_factor",1)) if spec.get("volume",True) else 0
@@ -415,17 +418,19 @@ def apply_camera(cam,spec):
     return cam
 
 
-def camera_projection(cam, spec, width, height):
+def camera_matrices(cam, spec, width, height):
     native = spec.get('viewport')
     if native:
         projection = Matrix([native['projection'][i:i+4] for i in range(0,16,4)]).transposed()
         view = Matrix([native['view'][i:i+4] for i in range(0,16,4)]).transposed() @ CONVERSION.inverted()
-        # The bridge keeps its view distances in world units for DOF/depth.
-        # Cancel Maya's view convention using the camera sampled with that
-        # context; this also handles inherited camera scale without a zoom.
-        source_world = transform(native['matrix']).normalized()
-        return projection @ view @ source_world
-    return cam.calc_matrix_camera(bpy.context.evaluated_depsgraph_get(), x=width, y=height)
+        # Keep the native pair together. Folding view/source cancellation into
+        # projection left a nonzero [3][3] from float rounding. Eevee tests that
+        # entry exactly to classify perspective, breaking local-light culling.
+        # The product remains Maya's original projection/view, including gates
+        # and inherited camera scale; color and shared depth use the same pair.
+        return view, projection
+    return cam.matrix_world.inverted(), cam.calc_matrix_camera(
+        bpy.context.evaluated_depsgraph_get(), x=width, y=height)
 
 
 def render(request, output):
