@@ -41,6 +41,7 @@ from eevee_maya.shared_frame import SharedFrame, SharedMailbox
 from eevee_maya.gpu_share import GpuShare
 from eevee_maya.mesh_packet import records
 from eevee_maya import shadow_quality
+from eevee_maya.gpu_lifetime import RetiredGpuPools
 from scene_sync import SceneMirror, update_camera, update_effects, position_atmosphere, world_bounds
 import worker
 
@@ -54,7 +55,7 @@ requests = SharedMailbox(session.name, "request", 256 * 1024 * 1024)
 responses = SharedMailbox(session.name, "response", 1024 * 1024)
 mirror = SceneMirror()
 state = {"last_id": 0, "offscreen": None, "depth_offscreen": None, "depth_batches": {},
-         "last_effects": None, "area": None, "size": None}
+         "last_effects": None, "area": None, "size": None, "retired_gpu": RetiredGpuPools()}
 
 
 def startup_progress(stage, completed=0, total=0):
@@ -79,6 +80,7 @@ def close():
         bpy.context.window_manager.event_timer_remove(state["pump"])
     for item in state.get("gpu_pool", []):
         item.close()
+    state['retired_gpu'].close()
     for key in ("offscreen", "depth_offscreen"):
         if state[key]:
             state[key].free()
@@ -165,6 +167,7 @@ def render_depth(width, height, view, projection, gpu_transport=False):
 
 def tick():
     try:
+        state['retired_gpu'].collect(shared.presented_id)
         exit_code = wintypes.DWORD()
         if (session / "stop").exists() or not parent or not kernel.GetExitCodeProcess(parent, ctypes.byref(exit_code)) or exit_code.value != 259:
             close()
@@ -254,8 +257,10 @@ def tick():
         gpu_transport = request.get("gpu_transport", False)
         if state["size"] != (width, height, gpu_transport):
             state["window_hidden_after_draw"]=False
-            for item in state.get("gpu_pool", []):
-                item.close()
+            # A response for the old size may still be waiting for Maya's first
+            # OpenSharedResource. Resize must not invalidate those handles.
+            state['retired_gpu'].retire(state.get('gpu_pool', []), max(state.get('gpu_frames', [0])))
+            state['retired_gpu'].collect(shared.presented_id)
             state["gpu_pool"] = []
             state["gpu"] = None
             for key in ("offscreen", "depth_offscreen"):
@@ -310,6 +315,7 @@ def tick():
                    "navigating":bool(request.get("navigating",False)),
                    "color_audit":audit,
                    "engine": "BLENDER_EEVEE_VIEWPORT", "transport": "gpu_shared_texture" if gpu_transport else "shared_memory",
+                   "retired_gpu_pools":len(state['retired_gpu'].pending),
                    "meshes": len(mirror.objects), "scene_rebuilds": mirror.rebuilds,
                    "incremental_updates": mirror.updates, "width": width, "height": height,
                    "effects": request.get("effects", {}),

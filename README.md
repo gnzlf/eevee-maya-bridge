@@ -54,6 +54,8 @@ Se compararon doce casos contra la ruta anterior con imágenes idénticas, inclu
 ### Estado del viewport
 
 - Integración en el menú Renderer de Maya con su cuadradito de opciones. Los ajustes pueden abrirse sin arrancar Blender y permanecen abiertos al activar o desactivar Eevee. El menú superior Eevee conserva ajustes, recarga y actualizaciones; ya no ofrece los dos modos de apertura de panel.
+- Desde 0.6.19, **Ajustes > HDRI** permite elegir una SkyDome existente, crear una con imagen o reemplazar su HDRI. Incluye Mostrar imagen de fondo, visibilidad del fondo, intensidad, exposición, rotación X/Y/Z, resolución de reflejos y espacio de color del nodo de imagen. Ocultar el fondo conserva iluminación y reflejos. Los campos editan los atributos nativos de Maya, admiten Undo/animación y respetan bloqueos; se guardan con la escena. La creación usa las reglas de color de Maya. Reemplazar una imagen compartida crea un nodo para la luz elegida y conserva las demás conexiones. Para iluminar con las SkyDome usa Todas las luces, o selecciónalas en el modo correspondiente.
+- También se corrige `OpenSharedResource (0x80070057)` causado por liberar recursos durante cambios de resolución. Blender conserva cada generación anterior hasta que Maya confirma que ya no necesita sus fotogramas; después libera esa memoria. La prueba fuerza cuatro cambios de tamaño con importación demorada de las texturas y verifica su liberación posterior. No cambia la selección de GPU ni certifica otros fallos del controlador.
 - Indicador animado dentro del viewport hasta recibir la primera imagen: muestra inicio, lectura de escena, materiales, geometría y preparación de shaders, con contadores reales cuando están disponibles y tiempo transcurrido. No estima un porcentaje ni tiempo restante. Cambiar a Viewport 2.0 cancela el arranque; los fallos muestran un mensaje en el viewport.
 - Mallas evaluadas de Maya, cambios de puntos, normales, matrices y visibilidad. Maya ejecuta skinClusters, blendShapes, rigs y pesos pintados.
 - Desde 0.6.16, el viewport GPU utiliza la **proyección real de Viewport 2.0**, en lugar de reconstruir el lente solo desde el FOV. Cambiar entre Renderer > Eevee y Viewport 2.0 conserva el encuadre sin escribir distancia focal ni transformación en la cámara de Maya. Incluye overscan, film fit, offsets, pan/zoom, film roll, post scale y cámara ortográfica con escala heredada. El color y la profundidad comparten esa proyección. El playblast toma la proyección de su destino real, que puede tener otra relación de aspecto que el panel visible.
@@ -129,7 +131,7 @@ Los artefactos quedan en `dist/`. Para publicar una nueva actualización:
 3. Con GitHub CLI autenticado, publica una versión nueva con sus notas:
 
 ```powershell
-./tools/publish_release.ps1 -Version 0.6.18 -NotesFile ./release-notes.md
+./tools/publish_release.ps1 -Version 0.6.19 -NotesFile ./release-notes.md
 ```
 
 El script construye los artefactos, sube `main` y crea el release. No reemplaza versiones ya publicadas. Los usuarios recibirán la oferta al volver a cargar Maya o al pulsar Buscar actualizaciones. También existe el workflow manual **Publicar versión** en GitHub Actions. Cada release conserva ZIP, instalador y SHA256SUMS.txt.

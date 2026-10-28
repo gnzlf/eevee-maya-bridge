@@ -2,7 +2,7 @@
 import maya.cmds as cmds
 import maya.api.OpenMaya as om
 from . import native_controls, shadow_quality
-from . import graphics, maya_lights
+from . import graphics, maya_lights, hdri
 from .ui import QtCore
 
 WINDOW = "eeveeViewportSettings"
@@ -17,6 +17,9 @@ class SettingsWindow:
         self.widgets = {}
         self.camera = None
         self.light = None
+        self.hdri = None
+        self.hdri_names = None
+        self.hdri_image = None
         self.compatibility_only = False
         self.timer = QtCore.QTimer()
         if cmds.window(WINDOW, exists=True): cmds.deleteUI(WINDOW)
@@ -105,6 +108,21 @@ class SettingsWindow:
         cmds.text(label='Light linking: utiliza el Relationship Editor de Maya. Se traducen vínculos de objetos y de sombras.',align='left',wordWrap=True)
         cmds.button(label='Abrir Light Linking de Maya',command=self.open_light_linking)
         cmds.setParent(tabs)
+        hdri_tab=cmds.scrollLayout(childResizable=True)
+        hdri_controls=cmds.columnLayout(adjustableColumn=True,rowSpacing=8)
+        cmds.text(label='Entorno HDRI · Arnold SkyDome',align='left',font='boldLabelFont')
+        self.hdri_menu=cmds.optionMenu(label='SkyDome',changeCommand=self.choose_hdri)
+        cmds.button(label='Usar la SkyDome seleccionada',command=self.selected_hdri)
+        cmds.button(label='Crear SkyDome y cargar HDRI…',command=self.create_hdri)
+        self.hdri_column=cmds.columnLayout(adjustableColumn=True,rowSpacing=6)
+        cmds.setParent(hdri_controls)
+        cmds.button(label='Cargar / reemplazar imagen HDRI…',command=self.load_hdri)
+        cmds.button(label='Usar todas las luces de la escena en este viewport',command=lambda *_:self.set_lighting('Todas las luces'))
+        cmds.text(label='Ocultar el fondo conserva la luz y los reflejos. Intensidad y exposición afectan ambos. La visibilidad del fondo solo regula su imagen.',align='left',wordWrap=True)
+        cmds.text(label='Gira la SkyDome para orientar el HDRI. Resolución regula el detalle de la sonda entre 128 y 4096; subirla consume GPU y memoria.',align='left',wordWrap=True)
+        cmds.text(label='Los controles editan los atributos nativos y admiten Undo y animación. Varias SkyDome suman luz; elige aquí cuál editar. El entorno respeta Todas / Seleccionadas del viewport.',align='left',wordWrap=True)
+        cmds.text(label='Usa mapas lat-long. El World de Eevee no reproduce light linking por objeto ni pesos difuso/especular independientes de la SkyDome.',align='left',wordWrap=True)
+        cmds.setParent(tabs)
         effects_tab = cmds.columnLayout(adjustableColumn=True, rowSpacing=6)
         self.attribute("hardwareRenderingGlobals.bloomEnable", "Bloom de viewport")
         self.attribute("hardwareRenderingGlobals.bloomThreshold", "Umbral bloom")
@@ -123,7 +141,8 @@ class SettingsWindow:
         cmds.text(label="La iluminación admite Point, Spot, Directional y Area. La respuesta de luz y materiales puede diferir de Viewport 2.0 y Arnold.", align="left", wordWrap=True)
         cmds.text(label="Light linking por objeto y sombras. Los vínculos por caras, motion blur y luces especiales de Arnold siguen sin soporte.", align="left", wordWrap=True)
         cmds.text(label='El espacio lineal sigue ACEScg, Rec.709 o Rec.2020 de Maya. La vista ACES 1.x usa ACES 1.3 de Blender como aproximación; las vistas OCIO personalizadas pueden diferir.', align='left', wordWrap=True)
-        cmds.tabLayout(tabs, edit=True, tabLabel=((viewport_tab,"Viewport"),(shadow_tab,"Sombras"),(camera_tab,"Cámara"),(light_tab,"Luz"),(effects_tab,"Eevee")))
+        self.tabs=tabs;self.hdri_tab=hdri_tab
+        cmds.tabLayout(tabs, edit=True, tabLabel=((viewport_tab,"Viewport"),(shadow_tab,"Sombras"),(camera_tab,"Cámara"),(light_tab,"Luz"),(hdri_tab,"HDRI"),(effects_tab,"Eevee")))
         self.timer.timeout.connect(self.refresh)
         self.timer.start(250)
         cmds.scriptJob(uiDeleted=[self.window,self.timer.stop],runOnce=True)
@@ -133,6 +152,76 @@ class SettingsWindow:
     @staticmethod
     def attribute(plug, label):
         if cmds.objExists(plug): return cmds.attrControlGrp(attribute=plug,label=label)
+
+    def choose_hdri(self,*args):
+        index=cmds.optionMenu(self.hdri_menu,query=True,select=True)-1
+        self.hdri=self.hdri_names[index] if self.hdri_names and 0<=index<len(self.hdri_names) else None
+        self.hdri_image=None
+        self.refresh_hdri(rebuild=True)
+
+    def selected_hdri(self,*args):
+        selected=[name for name in maya_lights.selected() if cmds.nodeType(name)=='aiSkyDomeLight']
+        if not selected:cmds.warning('Selecciona una Arnold SkyDome primero');return
+        self.hdri=selected[0];self.hdri_names=None;self.refresh_hdri(rebuild=True)
+
+    @staticmethod
+    def hdri_file():
+        files=cmds.fileDialog2(caption='Imagen HDRI lat-long',fileMode=1,fileFilter='HDRI (*.hdr *.exr);;Imágenes (*.png *.jpg *.tif *.tiff)')
+        return files[0] if files else None
+
+    def create_hdri(self,*args):
+        path=self.hdri_file()
+        if not path:return
+        try:self.hdri=hdri.create(path)
+        except (RuntimeError,ValueError) as error:cmds.warning(str(error));return
+        self.hdri_names=None;self.refresh_hdri(rebuild=True);self.controller.force=True
+
+    def load_hdri(self,*args):
+        if not self.hdri:cmds.warning('Crea o elige una SkyDome primero');return
+        path=self.hdri_file()
+        if not path:return
+        try:hdri.load_image(self.hdri,path)
+        except (RuntimeError,ValueError) as error:cmds.warning(str(error));return
+        self.refresh_hdri(rebuild=True);self.controller.force=True
+
+    def show_hdri_background(self,value):
+        if self.hdri and cmds.objExists(self.hdri+'.camera'):
+            cmds.setAttr(self.hdri+'.camera',1 if value else 0)
+            self.controller.force=True
+
+    def refresh_hdri(self,rebuild=False):
+        names=hdri.domes()
+        if names!=self.hdri_names:
+            for item in cmds.optionMenu(self.hdri_menu,query=True,itemListLong=True) or []:cmds.deleteUI(item)
+            for name in names:cmds.menuItem(label=name.rsplit('|',1)[-1],parent=self.hdri_menu)
+            if not names:cmds.menuItem(label='No hay SkyDome',parent=self.hdri_menu)
+            if self.hdri not in names:self.hdri=next((n for n in maya_lights.selected() if n in names),names[0] if names else None)
+            self.hdri_names=names;rebuild=True
+        cmds.optionMenu(self.hdri_menu,edit=True,enable=bool(names),select=names.index(self.hdri)+1 if self.hdri in names else 1)
+        connection=hdri.image_connection(self.hdri) if self.hdri else None
+        signature=(self.hdri,connection)
+        if signature!=self.hdri_image:rebuild=True
+        if rebuild:
+            for child in cmds.columnLayout(self.hdri_column,query=True,childArray=True) or []:cmds.deleteUI(child)
+            old=cmds.setParent(query=True);cmds.setParent(self.hdri_column)
+            self.hdri_background=None
+            self.hdri_widgets={}
+            if self.hdri:
+                self.attribute(self.hdri+'.visibility','Habilitar SkyDome')
+                self.hdri_background=cmds.checkBox(label='Mostrar imagen de fondo',changeCommand=self.show_hdri_background)
+                for attr,label in (('camera','Visibilidad del fondo'),('intensity','Intensidad del entorno'),('exposure','Exposición (EV)'),('resolution','Resolución de reflejos')):
+                    self.hdri_widgets[attr]=self.attribute(self.hdri+'.'+attr,label)
+                parent=cmds.listRelatives(self.hdri,parent=True,fullPath=True)[0]
+                for axis in 'XYZ':self.attribute(parent+'.rotate'+axis,'Rotación '+axis)
+                if connection:
+                    self.attribute(connection[0]+'.'+connection[1],'Imagen HDRI')
+                    self.attribute(connection[0]+'.colorSpace','Espacio de color')
+                else:cmds.text(label='Color constante o red sin traducción directa. Carga una imagen HDRI.',align='left',wordWrap=True)
+            else:cmds.text(label='Crea una SkyDome para controlar su HDRI aquí.',align='left')
+            cmds.setParent(old);self.hdri_image=signature
+        if self.hdri and self.hdri_background:
+            cmds.checkBox(self.hdri_background,edit=True,value=cmds.getAttr(self.hdri+'.camera')>0,
+                          enable=cmds.getAttr(self.hdri+'.camera',settable=True))
 
     def configure_opengl(self, *args):
         try:
@@ -259,6 +348,7 @@ class SettingsWindow:
             cmds.deleteUI(self.window)
             return
         self.controller = ui.settings_context(self.panel)
+        self.refresh_hdri()
         state=native_controls.read(self.panel)
         cmds.checkBox(self.shadow_enabled,edit=True,value=state['shadows'])
         if cmds.optionMenu(self.quality,query=True,value=True)!=str(self.controller.engine.config["max_width"]):

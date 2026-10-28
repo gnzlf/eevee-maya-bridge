@@ -1,12 +1,14 @@
-Eevee Maya Bridge 0.6.18 corrige materiales negros con texturas UDIM.
+Eevee Maya Bridge 0.6.19 añade ajustes HDRI y corrige recursos GPU al cambiar de resolución.
 
-- Las rutas con `<UDIM>` se resuelven contra sus tiles existentes. Antes el bridge exigía que el nombre literal existiera como archivo, descartaba el mapa y podía dejar negro el material.
-- Conserva el patrón UDIM y los tiles al abrir una imagen concreta. Admite también nombres de tile concreto y conjuntos sin el tile 1001.
-- El diagnóstico de materiales reconoce estos archivos y sigue avisando si el conjunto no existe.
-- No modifica colores, conexiones, rutas, materiales ni archivos de la escena original.
+- Nueva pestaña HDRI en los ajustes del renderer: elegir o crear SkyDome, cargar/reemplazar imagen, mostrar/ocultar fondo, visibilidad del fondo, intensidad, exposición, rotación y resolución de reflejos.
+- Ocultar el fondo conserva luz y reflejos. Los controles utilizan atributos nativos de Maya y se guardan con la escena; admiten Undo y animación. Reemplazar una imagen compartida no altera los mapas de otras luces o materiales.
+- Corrige `OpenSharedResource (HRESULT=0x80070057)` provocado por cambios de tamaño: las texturas anteriores se mantienen hasta que Maya confirma que ya no necesita esos fotogramas. Se reproducía el mismo error al demorar la primera importación de un recurso antiguo después de un resize.
+- Conserva las correcciones de texturas UDIM de 0.6.18.
 
-La compatibilidad de materiales continúa siendo parcial; esta corrección cubre texturas file directas y no añade redes arbitrarias de Arnold ni secuencias de texturas animadas.
+El HDRI sigue usando el World de Eevee: no añade light linking por objeto, pesos difuso/especular independientes ni equivalencia completa con los rebotes de Arnold. La corrección GPU cubre la duración de recursos durante resize; no cambia adaptadores ni certifica otros errores de drivers.
 
-Verificación: 11 comprobaciones con capturas Full HD, incluidas dos texturas UDIM y piel/ropa en la escena de producción sin guardar cambios. Pasan 91 pruebas de distribución, 7 del diagnóstico de materiales y 8 de carga/recarga del paquete instalado. También pasan las regresiones de playblast PNG/AVI y arranque en frío.
+Las pruebas incluyen importaciones demoradas tras cuatro tamaños GPU, liberación de pools confirmados, controles HDRI nativos, fondo oculto con reflejos, HDR/EXR y capturas Full HD.
+
+Verificación: 93 pruebas de distribución, 45 comprobaciones HDRI con la ventana de ajustes, 7 comprobaciones de resize GPU, 8 de edición/Undo de las imágenes y 8 de carga/recarga del instalador. Pasan las regresiones de PNG/AVI, arranque en frío y escena de producción sin guardar cambios en el archivo original.
 
 Actualiza desde Eevee > Buscar actualizaciones, guarda tu trabajo y reinicia Maya para cargar el código nuevo.

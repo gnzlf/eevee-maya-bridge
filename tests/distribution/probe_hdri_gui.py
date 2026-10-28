@@ -9,14 +9,16 @@ import time
 import traceback
 import maya.cmds as cmds
 import maya.utils
-from PySide2 import QtCore, QtGui
+from PySide2 import QtCore, QtGui, QtWidgets
+import maya.OpenMayaUI as omui
+from shiboken2 import wrapInstance
 
 ROOT = Path(__file__).resolve().parents[2]
 OUTPUT = Path(os.environ['EEVEE_HDRI_PROBE']).resolve()
 if Path(os.environ.get('MAYA_APP_DIR', '')).resolve() != OUTPUT/'hdri_regression_profile':
     raise RuntimeError('An owned HDRI regression profile is required')
 sys.path.insert(0, str(ROOT/'scripts'))
-from eevee_maya import ui, viewport, exporter, maya_lights, engine, __version__
+from eevee_maya import ui, viewport, exporter, maya_lights, engine, settings_window, __version__
 from eevee_maya.changes import SceneChanges
 checks = {}; reports = {}; state = {'deadline': time.monotonic()+240}; timer = None
 
@@ -74,6 +76,21 @@ def tick():
     timer.stop()
     try:
         dome=state['dome']; parent=state['parent']
+        window=settings_window.SettingsWindow(c)
+        cmds.tabLayout(window.tabs,edit=True,selectTab=window.hdri_tab)
+        checks['native_settings_has_hdri_tab']='HDRI' in cmds.tabLayout(window.tabs,query=True,tabLabel=True)
+        checks['settings_find_existing_dome_without_selecting_it']=window.hdri==dome
+        bindings={attr:cmds.attrControlGrp(control,query=True,attribute=True) for attr,control in window.hdri_widgets.items()}
+        reports['settings_bindings']=bindings
+        checks['settings_bind_native_intensity_exposure_camera_resolution']=all(cmds.ls(plug.split('.')[0],long=True)[0]==dome and plug.split('.')[-1]==attr for attr,plug in bindings.items())
+        window.show_hdri_background(False)
+        checks['background_checkbox_changes_only_camera_visibility']=cmds.getAttr(dome+'.camera')==0 and cmds.getAttr(dome+'.intensity')==1
+        cmds.setAttr(dome+'.camera',lock=True);window.refresh_hdri()
+        checks['locked_native_background_disables_checkbox']=not cmds.checkBox(window.hdri_background,query=True,enable=True)
+        cmds.setAttr(dome+'.camera',lock=False);window.refresh_hdri()
+        checks['unlocked_native_background_enables_checkbox']=cmds.checkBox(window.hdri_background,query=True,enable=True)
+        pointer=omui.MQtUtil.findWindow(window.window)
+        wrapInstance(int(pointer),QtWidgets.QWidget).grab().save(str(OUTPUT/'hdri_settings.png'))
         cmds.setAttr(dome+'.intensity',0); dark=capture('zero')
         cmds.setAttr(dome+'.intensity',.15); lit=capture('lit')
         checks['hdri_lights_metal_rough_metal_and_matte'] = all(b>a+.03 for a,b in zip(dark,lit))
