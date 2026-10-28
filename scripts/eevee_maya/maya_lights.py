@@ -5,11 +5,12 @@ import maya.cmds as cmds
 
 def types():
     result = ['directionalLight', 'pointLight', 'spotLight', 'areaLight', 'ambientLight']
-    try:
-        if om.MNodeClass('aiAreaLight').typeId.id():
-            result.append('aiAreaLight')
-    except (RuntimeError, ValueError):
-        pass
+    for kind in ('aiAreaLight', 'aiSkyDomeLight'):
+        try:
+            if om.MNodeClass(kind).typeId.id():
+                result.append(kind)
+        except (RuntimeError, ValueError):
+            pass
     return result
 
 

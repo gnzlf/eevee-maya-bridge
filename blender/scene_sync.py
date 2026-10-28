@@ -7,6 +7,7 @@ from mathutils import Matrix
 import worker
 from eevee_maya.mesh_packet import records
 from eevee_maya.lighting import same_light_links, set_light_visibility
+from environment import sync_environment
 
 
 class SceneMirror:
@@ -25,6 +26,7 @@ class SceneMirror:
         self.link_collections = {}
         self.progress = None
         self.ambient_enabled = False
+        self.environment_state = {}
 
     def sync_light_links(self,obj,spec):
         meshes={name:mesh for name,mesh in self.objects.items() if mesh.type=='MESH'}
@@ -134,7 +136,7 @@ class SceneMirror:
             worker.sync_ambient(self.objects,request['lights'],native)
         self.ambient_enabled=ambient_enabled
         existing = {obj["maya_path"]: obj for obj in bpy.context.scene.objects if obj.type == "LIGHT" and "maya_path" in obj}
-        lights=worker.expand_spot_profiles(request['lights'])
+        lights=worker.expand_spot_profiles([s for s in request['lights'] if s['kind'] != 'aiSkyDomeLight'])
         wanted = {spec["name"] for spec in lights}
         for name, obj in existing.items():
             if name not in wanted:
@@ -169,7 +171,7 @@ class SceneMirror:
         for name in ("EeveeStudioKey", "EeveeStudioFill"):
             obj = bpy.data.objects.get(name)
             if obj: set_light_visibility(obj, False)
-        sync_environment(mode)
+        self.environment_state = sync_environment(mode, request['lights'], native.get('selected_lights', []), native['shadows'])
         self.light_signature = signature
         self.light_specs = effective_specs
         for key,collection in list(self.link_collections.items()):
@@ -224,27 +226,6 @@ def update_camera(request):
     if headlight:
         headlight.matrix_world = cam.matrix_world
     return cam
-
-
-def sync_environment(mode):
-    """A visible backdrop is independent of the lights selected in Maya."""
-    scene = bpy.context.scene
-    scene.world.use_nodes = True
-    tree = scene.world.node_tree
-    ambient=tree.nodes.get("EeveeAmbientLighting")
-    if ambient is None:
-        background=tree.nodes.get("Background") or tree.nodes.new("ShaderNodeBackground")
-        background.inputs[0].default_value=(.12,.12,.12,1);background.inputs[1].default_value=.5
-        ambient=tree.nodes.new("ShaderNodeBackground");ambient.name="EeveeAmbientLighting"
-        ambient.inputs[0].default_value=(1,1,1,1)
-        path=tree.nodes.new("ShaderNodeLightPath");path.name="EeveeBackgroundOnly"
-        mix=tree.nodes.new("ShaderNodeMixShader");mix.name="EeveeBackgroundMix"
-        tree.links.new(path.outputs["Is Camera Ray"],mix.inputs[0])
-        tree.links.new(ambient.outputs[0],mix.inputs[1]);tree.links.new(background.outputs[0],mix.inputs[2])
-        output=next(node for node in tree.nodes if node.type=="OUTPUT_WORLD")
-        tree.links.new(mix.outputs[0],output.inputs["Surface"])
-    strength=1.0 if mode=="flat" else 0.0
-    if ambient.inputs[1].default_value!=strength:ambient.inputs[1].default_value=strength
 
 
 def update_effects(request):

@@ -327,6 +327,7 @@ def tick():
                                    "ao_backend":"shared_depth_gpu" if gpu_transport else "eevee_fast_gi",
                                    "reflection_trace_roughness":scene.eevee.ray_tracing_options.trace_max_roughness,
                                    "background_camera_only":bool(scene.world.node_tree.nodes.get("EeveeBackgroundOnly")),
+                                   "environment":mirror.environment_state,
                                    "environment_strength":scene.world.node_tree.nodes["EeveeAmbientLighting"].inputs[1].default_value if scene.world.node_tree.nodes.get("EeveeAmbientLighting") else None,
                                    "volume_range":[scene.eevee.volumetric_start,scene.eevee.volumetric_end],
                                    "volume_density":bpy.data.objects['EeveeAtmosphereVolume'].data.materials[0].node_tree.nodes['EeveeAtmosphere'].inputs['Density'].default_value,

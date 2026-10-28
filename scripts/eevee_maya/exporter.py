@@ -200,6 +200,23 @@ def camera(camera_name, width, height):
     }
 
 
+def environment_texture(node):
+    """Direct file/aiImage environment sources; never sample an unsupported graph."""
+    sources = cmds.listConnections(node + '.color', source=True, destination=False) or []
+    if not sources:
+        return None, None
+    source = sources[0]
+    kind = cmds.nodeType(source)
+    if kind not in ('file', 'aiImage'):
+        return None, 'HDRI: solo se admiten conexiones directas file o aiImage en Color'
+    path = attr(source, 'fileTextureName' if kind == 'file' else 'filename', '')
+    if not os.path.isabs(path):
+        path = cmds.workspace(expandName=path)
+    if not os.path.isfile(path):
+        return None, 'HDRI: archivo de entorno no disponible'
+    return {'path': path, 'color_space': attr(source, 'colorSpace', 'sRGB')}, None
+
+
 def lights():
     from . import maya_lights
     result = []
@@ -212,6 +229,21 @@ def lights():
             kind = cmds.nodeType(name)
             if kind in kinds:
                 matrix = matrix_values(path.inclusiveMatrix())
+                if kind == 'aiSkyDomeLight':
+                    image, warning = environment_texture(name)
+                    # A connected color is replaced by its texture, not multiplied
+                    # by Maya's evaluated outColor (which can be black for aiImage).
+                    result.append({'name': name, 'kind': kind, 'matrix': matrix,
+                                   'color': list(attr(name, 'color', (1, 1, 1))) if not image and not warning else [1, 1, 1],
+                                   'texture': image, 'warning': warning,
+                                   'intensity': attr(name, 'intensity', 1),
+                                   'exposure': attr(name, 'exposure', 0),
+                                   'camera': attr(name, 'camera', 1),
+                                   'format': attr(name, 'format', 2),
+                                   'resolution': attr(name, 'resolution', 1000),
+                                   'diffuse': attr(name, 'aiDiffuse', 1),
+                                   'specular': attr(name, 'aiSpecular', 1)})
+                    continue
                 result.append({"name": name, "kind": kind, "matrix": matrix,
                                "color": list(attr(name, "color", (1, 1, 1))),
                                "intensity": attr(name, "intensity", 1), "exposure": attr(name, "aiExposure", 0),

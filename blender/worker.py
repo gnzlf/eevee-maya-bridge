@@ -372,7 +372,8 @@ def build_scene(request, transmission_preview=False, progress=None):
         bpy.context.scene.collection.objects.link(obj)
         obj.matrix_world = transform(spec["matrix"])
     for spec in request["lights"]:
-        create_light(spec)
+        if spec['kind'] != 'aiSkyDomeLight':
+            create_light(spec)
     if request["studio"]:
         for name, location, energy, size in (
                 ("EeveeStudioKey", (4, -6, 8), 1500, 5),
@@ -443,9 +444,15 @@ def render(request, output):
     scene.render.resolution_percentage = 100
     if hasattr(scene, "eevee") and hasattr(scene.eevee, "taa_render_samples"):
         scene.eevee.taa_render_samples = request["samples"]
-    scene.world.use_nodes = True
-    scene.world.node_tree.nodes["Background"].inputs[0].default_value = (0.12, 0.12, 0.12, 1)
-    scene.world.node_tree.nodes["Background"].inputs[1].default_value = 0.5
+    from environment import sync_environment
+    native = request.get('native', {})
+    sync_environment(native.get('displayLights', 'all'), request.get('lights', []),
+                     native.get('selected_lights', []), native.get('shadows', True))
+    if not any(s['kind'] == 'aiSkyDomeLight' for s in request.get('lights', [])):
+        # Preserve the image backend's original neutral world illumination.
+        ambient = scene.world.node_tree.nodes['EeveeAmbientLighting']
+        ambient.inputs['Color'].default_value = (.12, .12, .12, 1)
+        ambient.inputs['Strength'].default_value = .5
     scene.render.image_settings.file_format = "PNG"
     scene.render.image_settings.color_mode = "RGBA"
     scene.render.filepath = str(output)

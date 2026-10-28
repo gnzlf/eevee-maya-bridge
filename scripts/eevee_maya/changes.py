@@ -86,7 +86,7 @@ class SceneChanges:
             self.structural_events = (self.structural_events + [("structure", "unavailable node")])[-32:]
 
     def material_changed(self, *args):
-        if args and (args[0].hasFn(om.MFn.kLight) or om.MFnDependencyNode(args[0]).typeName == 'aiAreaLight'):
+        if args and (args[0].hasFn(om.MFn.kLight) or om.MFnDependencyNode(args[0]).typeName in ('aiAreaLight', 'aiSkyDomeLight')):
             return  # Light data is polled separately; keep all mesh resources alive.
         self.dirty = True
         self.material_dirty = True
@@ -136,7 +136,7 @@ class SceneChanges:
             if watch and node.hasFn(om.MFn.kTransform):
                 dag = om.MFnDagNode(node)
                 watch = not any(dag.child(i).hasFn(om.MFn.kCamera) or dag.child(i).hasFn(om.MFn.kLight)
-                                or om.MFnDependencyNode(dag.child(i)).typeName == 'aiAreaLight' for i in range(dag.childCount()))
+                                or om.MFnDependencyNode(dag.child(i)).typeName in ('aiAreaLight', 'aiSkyDomeLight') for i in range(dag.childCount()))
             if watch:
                 dynamic = node.hasFn(om.MFn.kMesh) or node.hasFn(om.MFn.kTransform)
                 self.watch_node(node, dynamic)

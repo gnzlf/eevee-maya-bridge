@@ -151,6 +151,9 @@ class Engine:
         self.status = "Eevee %d×%d (%s) | %d mallas | %.1f ms" % (
             response['width'],response['height'],'navegación rápida' if response.get('navigating') else ('previa al editar' if response.get('interactive') else 'calidad completa'),
             response["meshes"], response["seconds"] * 1000)
+        warnings = response.get('eevee_state', {}).get('environment', {}).get('warnings', [])
+        if warnings:
+            self.status += ' | ' + warnings[0]
         return True
 
     @property

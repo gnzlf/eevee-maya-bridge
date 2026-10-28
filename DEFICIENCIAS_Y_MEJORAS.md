@@ -1,6 +1,6 @@
 # Eevee Maya Bridge: deficiencias y plan de mejora
 
-**Actualizado:** 28 de octubre de 2026. **Base revisada:** bridge 0.6.16, Maya 2024 y Blender 5.2.0 en Windows.
+**Actualizado:** 28 de octubre de 2026. **Base revisada:** bridge 0.6.17, Maya 2024 y Blender 5.2.0 en Windows.
 
 Este informe describe el estado del código y las verificaciones disponibles. Distingue funciones implementadas, compatibilidad parcial y propuestas pendientes. Las metas de rendimiento son objetivos de desarrollo, no resultados ya alcanzados.
 
@@ -90,6 +90,10 @@ La API de Maya debe consultarse desde contextos compatibles con su modelo de eje
 ### 4.2 Materiales de Maya y Arnold
 
 **Estado actual.** Se traducen parcialmente Lambert, Blinn, Phong, Standard Surface y Arnold Standard Surface, con texturas file directas, UDIM y conexiones sencillas de normal/bump. Ya se corrigieron el brillo indebido de Lambert y las máscaras de color especular.
+
+**HDRI añadido en 0.6.17.** Las SkyDome de Arnold se traducen al World de Eevee para iluminación y reflejos de los materiales compatibles. Admiten color constante y mapas HDR/EXR lat-long mediante file o aiImage directos, espacio de color del nodo, intensidad, exposición, rotación, visibilidad y selección nativa. Camera = 0 conserva el reflejo con fondo gris. La orientación se contrastó con una textura de calibración lineal renderizada en Arnold CPU. El grafo y las imágenes se reutilizan al modificar intensidad, exposición o rotación y al mover cámara o deformar geometría. Resolution controla la sonda mundial entre 128 y 4096; el rango HDR no se convierte en una luz direccional auxiliar.
+
+**Límites del entorno.** La sonda de Eevee no equivale al muestreo y oclusión de Arnold: interiores pueden recibir luz de más y no hay equivalencia de rebotes o sombras físicas. No se implementa light linking por objeto para World ni pesos Diffuse/Specular independientes; esos pesos generan aviso. Tampoco se traducen Angular/Mirrored Ball, grafos de utilidades/procedurales o ajustes de UV/color del nodo de imagen. Las luces locales mantienen sus vínculos. Mejoras posteriores: conversión explícita de redes, diagnóstico de atributos omitidos, sondas locales para interiores y comparación de materiales/espacios de color con referencias Arnold.
 
 **Deficiencia.** Traducir algunos atributos no equivale a ejecutar el grafo original. Redes con mezclas, utilidades, texturas procedurales y modelos de dispersión pueden perder conexiones o cambiar de aspecto. No hay soporte completo de redes arbitrarias de Arnold, displacement o materiales especiales.
 
