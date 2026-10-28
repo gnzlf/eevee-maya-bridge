@@ -1,6 +1,6 @@
 # Eevee Maya Bridge: deficiencias y plan de mejora
 
-**Actualizado:** 28 de octubre de 2026. **Base revisada:** bridge 0.6.20, Maya 2024 y Blender 5.2.0 en Windows.
+**Actualizado:** 28 de octubre de 2026. **Base revisada:** bridge 0.6.21, Maya 2024 y Blender 5.2.0 en Windows.
 
 Este informe describe el estado del código y las verificaciones disponibles. Distingue funciones implementadas, compatibilidad parcial y propuestas pendientes. Las metas de rendimiento son objetivos de desarrollo, no resultados ya alcanzados.
 
@@ -23,6 +23,10 @@ La validación incluye pruebas automatizadas, doce comprobaciones de interfaz gr
 Para la distribución 0.6.12 pasaron las 77 pruebas automatizadas con la prueba de instalación activada, además de ocho comprobaciones del plugin instalado y sus DLL. Se verificaron captura PNG/AVI a 1920 × 1080, captura en frío y una escena de producción de 566 mallas en un proceso de Maya dedicado. La prueba de producción conserva el archivo original; sigue sin certificar 30 FPS.
 
 ## 1. Diagnóstico principal
+
+**Corrección de playblast/Prism en 0.6.21:** Maya puede asignar un destino interno diferente al panel de origen durante una captura offscreen. El puente omitía entonces la sincronización de cámara y geometría, y podía exportar negro o repetir la imagen anterior. Ahora sincroniza esos destinos durante el playblast y rechaza cámaras que no correspondan al panel Eevee. Los fallos al dibujar la textura GPU también invalidan la captura.
+
+Se añade un adaptador reversible para la operación de playblast de Prism. Fija el panel de origen antes de que Prism aplique la cámara, valida la secuencia completa y permite generar MOV H.264/AAC mediante el FFmpeg de Prism y una captura AVI temporal de Maya. No instala QuickTime antiguo, no edita Prism y no mantiene un reemplazo permanente del comando de Maya. Se conserva la ruta JPEG→MP4 de Prism y su opción MP4 con audio. Esta integración no añade soporte de códecs a QuickTime nativo fuera de Prism; el AVI temporal puede ocupar bastante espacio en capturas largas.
 
 **Corrección de Spot/Point en 0.6.20:** al multiplicar la vista nativa y su compensación dentro de la proyección se generaba un residuo en el elemento que Eevee utiliza para distinguir perspectiva de ortográfica. El resultado podía ser un personaje negro salvo por una pequeña región iluminada, aunque Directional funcionara. Ahora se envían juntas las matrices nativas de vista y proyección; color y profundidad usan el mismo par. La prueba compara capturas contra Viewport 2.0 en el mismo panel y cubre cámaras trasladadas/rotadas, escala, lente, film fit, gates, pan/zoom y ortográfica, sin escribir parámetros en la cámara de Maya.
 

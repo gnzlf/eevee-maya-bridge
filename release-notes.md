@@ -1,11 +1,12 @@
-Eevee Maya Bridge 0.6.20 corrige las spotlights que dejaban objetos negros con determinadas cámaras.
+Eevee Maya Bridge 0.6.21 corrige los playblasts negros o congelados y añade compatibilidad con la opción QuickTime de Prism.
 
-- Corrige la conversión de cámara: un residuo numérico hacía que Eevee interpretara una perspectiva como ortográfica y descartara iluminación Spot/Point en casi toda la imagen. Se conserva el par nativo de vista/proyección, el encuadre y los parámetros de cámara de Maya.
-- Spot y Point usan un alcance finito basado en receptores visibles y atmósfera, evitando el recorte prematuro de luces tenues por el umbral automático de Eevee. No cambia la energía de la luz al mover la geometría.
-- Conserva luz seleccionada, vínculos por objeto, sombras, controles HDRI y la corrección de recursos GPU durante cambios de resolución.
+- Sincroniza cada pose también cuando Maya renderiza el playblast offscreen mediante un panel interno diferente del panel Eevee. Antes ese cambio podía omitir la actualización y reutilizar una imagen anterior, o negro durante el arranque.
+- El adaptador de Prism fija el panel Eevee antes de aplicar la cámara y comprueba que se hayan capturado todos los fotogramas. Conserva los nombres, versiones, JPEG→MP4 y MP4 con audio de Prism.
+- La opción QuickTime de Prism genera MOV H.264/AAC mediante su FFmpeg y una captura AVI temporal de Maya, conservando el audio incluido por Maya. No requiere instalar QuickTime antiguo ni modificar los archivos de Prism.
+- Un fallo al presentar la textura GPU invalida el playblast. Se comprueba también que la cámara de captura corresponda al panel seleccionado.
 
-Verificado en una escena de producción suministrada por el usuario, en un Maya separado y sin guardar el archivo original: intensidad 0/1/8, sombras y cambio de fotograma a 1920 × 1080. La validación mide cobertura de superficies mediante una referencia Directional; excluye falsos positivos por iconos o pequeños parches luminosos. También se comprueban cámara trasladada/rotada, escala, lentes, film fit, offsets, gates, pan/zoom y ortográfica contra Viewport 2.0 en el mismo panel.
+La adaptación se aplica únicamente durante la operación de playblast de Prism cuando Eevee está activo. El comando original se restaura al terminar, también ante errores. Al descargar el plugin se restaura la función original de Prism. El AVI temporal puede requerir bastante espacio en clips largos. QuickTime nativo fuera de Prism conserva sus requisitos originales.
 
-El decaimiento distinto del cuadrático sigue siendo una aproximación calibrada en Center of Illumination. No se certifica equivalencia fotométrica con Arnold ni 30 FPS.
+Guarda tu trabajo y reinicia Maya después de actualizar para activar 0.6.21.
 
-Actualiza desde Eevee > Buscar actualizaciones, guarda tu trabajo y reinicia Maya. Si subiste mucho la intensidad para compensar el fallo anterior, redúcela antes de evaluar la luz corregida.
+Verificación: 102 pruebas de distribución, 30 comprobaciones gráficas con el adaptador de Prism instalado y arranque en frío, sonido audible, skin y cámara animada. Una escena de producción pasó los 148 fotogramas Full HD en MP4 y MOV; se compararon inicio, mitad y final con PNG de referencia. Pasan también las regresiones de PNG/AVI, captura en frío y una escena grande en una sesión de prueba aislada, sin guardar los archivos originales.

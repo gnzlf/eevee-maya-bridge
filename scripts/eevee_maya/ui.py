@@ -375,6 +375,9 @@ class Controller:
         self.changes.dirty = True
         state = native_controls.read(self.panel)
         data = self.snapshot(camera, width, height, state)
+        frame_camera = getattr(self, 'viewport_camera', None)
+        if frame_camera and frame_camera['path'] != data['camera']['path']:
+            raise RuntimeError('La cámara del playblast no corresponde al panel Eevee seleccionado.')
         viewport.register().native = state
         self.engine.submit(data, force=True, capture=True)
         token = self.engine.sent_id
@@ -604,6 +607,8 @@ def install_menu():
         return
     remove_menu()
     capture.install()
+    from . import prism_capture
+    prism_capture.install()
     main = mel.eval("$tmp = $gMainWindow")
     # buildRendererMenu discovers <overrideName>OptionBox automatically.
     mel.eval('global proc EeveeBridgeOptionBox() { python("from eevee_maya import ui; ui.show_settings()"); }')
@@ -620,6 +625,8 @@ def install_menu():
 
 
 def remove_menu():
+    from . import prism_capture
+    prism_capture.uninstall()
     capture.uninstall()
     if cmds.menu(MENU, exists=True):
         cmds.deleteUI(MENU)

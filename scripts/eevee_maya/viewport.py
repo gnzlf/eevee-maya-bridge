@@ -21,7 +21,11 @@ class CameraSync(render.MUserRenderOperation):
     def execute(self, context):
         from . import ui, capture
         controller = ui._controller
-        if controller is None or controller.panel != self.owner.destination:
+        # Maya can render an offscreen playblast through a different destination
+        # panel while keeping the source panel's Eevee override. Rejecting that
+        # destination skipped synchronization and captured the last viewport
+        # texture (or black during startup) for every requested frame.
+        if controller is None or (not capture.active() and controller.panel != self.owner.destination):
             return
         path = context.getCurrentCameraPath()
         frame = {'path': path.fullPathName(), 'matrix': list(path.inclusiveMatrix()),
@@ -106,6 +110,9 @@ class GPUImage(render.MUserRenderOperation):
             self.error = None
         except Exception as exc:
             self.error = str(exc)
+            from . import capture, ui
+            if capture.active() and ui._controller is not None:
+                ui._controller.capture_error = 'No se pudo presentar el fotograma GPU: ' + self.error
             raise
 
     def release(self):
