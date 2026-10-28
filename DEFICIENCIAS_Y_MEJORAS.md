@@ -1,6 +1,6 @@
 # Eevee Maya Bridge: deficiencias y plan de mejora
 
-**Actualizado:** 28 de octubre de 2026. **Base revisada:** bridge 0.6.17, Maya 2024 y Blender 5.2.0 en Windows.
+**Actualizado:** 28 de octubre de 2026. **Base revisada:** bridge 0.6.18, Maya 2024 y Blender 5.2.0 en Windows.
 
 Este informe describe el estado del código y las verificaciones disponibles. Distingue funciones implementadas, compatibilidad parcial y propuestas pendientes. Las metas de rendimiento son objetivos de desarrollo, no resultados ya alcanzados.
 
@@ -90,6 +90,8 @@ La API de Maya debe consultarse desde contextos compatibles con su modelo de eje
 ### 4.2 Materiales de Maya y Arnold
 
 **Estado actual.** Se traducen parcialmente Lambert, Blinn, Phong, Standard Surface y Arnold Standard Surface, con texturas file directas, UDIM y conexiones sencillas de normal/bump. Ya se corrigieron el brillo indebido de Lambert y las máscaras de color especular.
+
+**Rutas UDIM corregidas en 0.6.18.** El exportador comprobaba `isfile()` sobre el nombre literal con `<UDIM>` antes de enumerar sus tiles. Un material con textura válida podía terminar con Base Color negro y sin imagen en Eevee. Ahora se resuelve primero el conjunto de archivos, se abre un tile concreto y se envía el patrón a Blender. El diagnóstico utiliza la misma resolución. La corrección no modifica el shader, rutas ni archivos originales. La regresión usa dos tiles con colores distintos y comprueba rutas literales y concretas; deben añadirse más casos para secuencias animadas y otros convenios de nombres, que no se certifican con este cambio.
 
 **HDRI añadido en 0.6.17.** Las SkyDome de Arnold se traducen al World de Eevee para iluminación y reflejos de los materiales compatibles. Admiten color constante y mapas HDR/EXR lat-long mediante file o aiImage directos, espacio de color del nodo, intensidad, exposición, rotación, visibilidad y selección nativa. Camera = 0 conserva el reflejo con fondo gris. La orientación se contrastó con una textura de calibración lineal renderizada en Arnold CPU. El grafo y las imágenes se reutilizan al modificar intensidad, exposición o rotación y al mover cámara o deformar geometría. Resolution controla la sonda mundial entre 128 y 4096; el rango HDR no se convierte en una luz direccional auxiliar.
 

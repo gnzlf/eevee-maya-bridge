@@ -2,6 +2,7 @@ import json
 from pathlib import Path
 import sys
 import unittest
+import tempfile
 from unittest import mock
 
 ROOT = Path(__file__).resolve().parents[2]
@@ -57,6 +58,16 @@ class MaterialAudit(unittest.TestCase):
         self.assertEqual(report['materials'][0]['name'], 'Client:Skin')
         self.assertNotIn('Client', json.dumps(anonymized(report)))
         self.assertIn('name', report['materials'][0])
+
+    def test_existing_udim_token_source_is_readable(self):
+        with tempfile.TemporaryDirectory() as folder:
+            root=Path(folder);(root/'skin_1001.png').write_bytes(b'fixture')
+            cmds=self.commands(pairs=['Client:Skin.baseColor','file1.outColor'])
+            values={'file1.fileTextureName':str(root/'skin_<UDIM>.png'),
+                    'file1.uvTilingMode':3,'file1.computedFileTextureNamePattern':''}
+            cmds.getAttr.side_effect=lambda plug:values[plug]
+            report=audit(cmds)
+            self.assertEqual(report['materials_with_issues'],0)
 
     def test_read_error_is_reported_and_does_not_reveal_paths(self):
         cmds = self.commands()

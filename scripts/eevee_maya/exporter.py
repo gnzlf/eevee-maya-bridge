@@ -2,8 +2,6 @@
 import math
 import os
 import array
-import re
-from pathlib import Path
 
 import maya.api.OpenMaya as om
 import maya.cmds as cmds
@@ -24,7 +22,8 @@ def attr(node, name, default):
 
 
 def texture(node, attribute):
-    """Only a direct Maya file connection has a defined mapping in v0.1."""
+    """Direct Maya file textures, including literal <UDIM> source paths."""
+    from .texture_paths import resolve
     files = cmds.listConnections(node + "." + attribute, source=True,
                                  destination=False, type="file") or []
     if not files:
@@ -32,18 +31,13 @@ def texture(node, attribute):
     path = attr(files[0], "fileTextureName", "")
     if not os.path.isabs(path):
         path = cmds.workspace(expandName=path)
-    if not os.path.isfile(path):
+    pattern = attr(files[0], 'computedFileTextureNamePattern', '') or ''
+    if pattern and not os.path.isabs(pattern):
+        pattern = cmds.workspace(expandName=pattern)
+    result = resolve(path, attr(files[0], 'uvTilingMode', 0) == 3, pattern)
+    if result is None:
         return None
-    result = {"path": path, "color_space": attr(files[0], "colorSpace", "sRGB")}
-    if attr(files[0], "uvTilingMode", 0) == 3:
-        pattern = attr(files[0], "computedFileTextureNamePattern", "")
-        if "<UDIM>" not in pattern:
-            pattern = re.sub(r"(?<!\d)1\d{3}(?=\.[^.]+$)", "<UDIM>", path)
-        result["udim_pattern"] = pattern
-        template = Path(pattern)
-        tile_re = re.compile(re.escape(template.name).replace(re.escape("<UDIM>"), r"(1\d{3})"))
-        result["tiles"] = sorted(int(match.group(1)) for file in template.parent.glob(template.name.replace("<UDIM>", "1???"))
-                                 for match in [tile_re.fullmatch(file.name)] if match)
+    result['color_space'] = attr(files[0], 'colorSpace', 'sRGB')
     return result
 
 

@@ -1,5 +1,6 @@
 """Read-only audit of incoming material connections; never edits or evaluates meshes."""
 import os
+from .texture_paths import resolve
 
 
 SUPPORTED = ('standardSurface', 'aiStandardSurface', 'lambert', 'blinn', 'phong', 'aiStandardVolume')
@@ -36,9 +37,11 @@ def audit(cmds, nodes=None, include_names=False):
             path = cmds.getAttr(source + '.fileTextureName') or ''
             if path and not os.path.isabs(path):
                 path = cmds.workspace(expandName=path)
-            # This mirrors exporter.texture's current source-file requirement,
-            # including its UDIM limitation when only a token path exists.
-            if not path or not os.path.isfile(path):
+            tiled = cmds.getAttr(source + '.uvTilingMode') == 3
+            pattern = (cmds.getAttr(source + '.computedFileTextureNamePattern') or '') if tiled else ''
+            if pattern and not os.path.isabs(pattern):
+                pattern = cmds.workspace(expandName=pattern)
+            if resolve(path, tiled, pattern) is None:
                 issue('texture_not_readable', attribute, 'file')
 
         try:

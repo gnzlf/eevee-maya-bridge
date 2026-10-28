@@ -1,12 +1,12 @@
-Eevee Maya Bridge 0.6.17 añade HDRI de Arnold SkyDome Light al viewport.
+Eevee Maya Bridge 0.6.18 corrige materiales negros con texturas UDIM.
 
-- Los mapas HDR/EXR lat-long conectados directamente mediante file o aiImage iluminan los materiales traducidos de Maya/Arnold y aparecen en sus reflejos, incluidos metales y superficies rugosas.
-- Respeta intensidad, exposición, rotación del transform, espacio de color de la imagen, visibilidad y modos nativos Todas/Seleccionadas. Camera = 0 conserva iluminación y reflejos con el fondo oculto.
-- La orientación del mapa se corrigió comparándola con una calibración renderizada en Arnold CPU. Resolution controla la sonda mundial entre 128 y 4096.
-- Los cambios de intensidad, exposición y rotación reutilizan el grafo del entorno y la imagen cargada. Navegar o deformar no reconstruye el HDRI. Los recursos ausentes o fuentes no compatibles dejan un aviso.
+- Las rutas con `<UDIM>` se resuelven contra sus tiles existentes. Antes el bridge exigía que el nombre literal existiera como archivo, descartaba el mapa y podía dejar negro el material.
+- Conserva el patrón UDIM y los tiles al abrir una imagen concreta. Admite también nombres de tile concreto y conjuntos sin el tile 1001.
+- El diagnóstico de materiales reconoce estos archivos y sigue avisando si el conjunto no existe.
+- No modifica colores, conexiones, rutas, materiales ni archivos de la escena original.
 
-Alcance: World de Eevee usa una sonda ambiental. No reproduce los rebotes, oclusión interior, sombras físicas, light linking por objeto ni pesos Diffuse/Specular independientes de la SkyDome de Arnold. No traduce redes procedurales/utilidades, formatos Angular/Mirrored Ball ni ajustes UV/color de los nodos de imagen. La compatibilidad de materiales continúa siendo parcial.
+La compatibilidad de materiales continúa siendo parcial; esta corrección cubre texturas file directas y no añade redes arbitrarias de Arnold ni secuencias de texturas animadas.
 
-Verificación: 39 comprobaciones de HDRI con capturas nativas, incluidos HDR/EXR, tres materiales, fondo oculto, varias domes y Full HD; 86 pruebas de distribución, 8 de exportación y 8 de carga/recarga del paquete instalado. Regresión de playblast PNG/AVI, arranque en frío y escena de producción sin guardar cambios en el archivo original.
+Verificación: 11 comprobaciones con capturas Full HD, incluidas dos texturas UDIM y piel/ropa en la escena de producción sin guardar cambios. Pasan 91 pruebas de distribución, 7 del diagnóstico de materiales y 8 de carga/recarga del paquete instalado. También pasan las regresiones de playblast PNG/AVI y arranque en frío.
 
 Actualiza desde Eevee > Buscar actualizaciones, guarda tu trabajo y reinicia Maya para cargar el código nuevo.
