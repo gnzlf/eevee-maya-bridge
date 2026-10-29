@@ -33,6 +33,9 @@ def read(panel):
     for flag in ("displayLights", "shadows", "displayTextures", "useDefaultMaterial",
                  "depthOfFieldPreview", "wireframeOnShaded", "displayAppearance"):
         result[flag] = cmds.modelEditor(panel, query=True, **{flag: True})
+    for flag,default in (('exposure',0),('gamma',1),('cmEnabled',True),('viewTransformName','')):
+        try:result[flag]=cmds.modelEditor(panel,query=True,**{flag:True})
+        except (RuntimeError,TypeError):result[flag]=default
     result.update(ao=bool(global_value("ssaoEnable", False)),
                   viewport_width=int(cmds.modelEditor(panel,query=True,width=True)),
                   ao_radius_pixels=float(global_value("ssaoRadius", 16)),

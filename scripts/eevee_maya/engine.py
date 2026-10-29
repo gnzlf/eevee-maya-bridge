@@ -58,7 +58,7 @@ class Engine:
         self.startup_stage = {'stage': 'starting'}
         self.startup_read_at = 0
 
-    def start(self):
+    def start(self, color_settings=None):
         if self.process and self.process.poll() is None:
             return
         blender = Path(self.config["blender"])
@@ -81,6 +81,16 @@ class Engine:
         startup.dwFlags |= subprocess.STARTF_USESHOWWINDOW
         startup.wShowWindow = 0
         environment = os.environ.copy()
+        from .color_management import prepare_native
+        native_config = prepare_native(color_settings, self.session)
+        # Do not inherit an unrelated OCIO configuration from a launcher.
+        environment.pop('EEVEE_NATIVE_OCIO', None)
+        if native_config:
+            environment['OCIO'] = str(native_config)
+            environment['EEVEE_NATIVE_OCIO'] = '1'
+        else:
+            environment.pop('OCIO', None)
+        self.color_settings = color_settings
         environment["TEMP"] = environment["TMP"] = str(self.session)
         self.process = subprocess.Popen(command, stdout=self.log, stderr=subprocess.STDOUT,
                                         startupinfo=startup,

@@ -11,7 +11,7 @@ _rebuilds = 0
 _state = {}
 
 
-def sync_environment(mode, lights=(), selected=(), shadows=True):
+def sync_environment(mode, lights=(), selected=(), shadows=True, minimum_resolution=0):
     global _signature, _state, _topology, _rebuilds
     world = bpy.context.scene.world
     world.use_nodes = True
@@ -19,7 +19,7 @@ def sync_environment(mode, lights=(), selected=(), shadows=True):
     domes = [s for s in lights if s['kind'] == 'aiSkyDomeLight' and
              (mode == 'all' or mode in ('active', 'selected') and s['name'] in selected)]
     # Local lights, camera navigation and deformation do not invalidate the IBL.
-    signature = (world.as_pointer(), mode, shadows, json.dumps(domes, sort_keys=True))
+    signature = (world.as_pointer(), mode, shadows, minimum_resolution, json.dumps(domes, sort_keys=True))
     if signature == _signature and tree.nodes.get('EeveeBackgroundMix'):
         return _state
     topology = (world.as_pointer(), [(s['name'], s.get('texture'), s.get('warning'),
@@ -130,7 +130,7 @@ def sync_environment(mode, lights=(), selected=(), shadows=True):
     # Keep the HDR range in the world probe; do not synthesize a directional sun.
     if world.sun_threshold != 0: world.sun_threshold = 0
     if world.use_sun_shadow != bool(shadows): world.use_sun_shadow = bool(shadows)
-    resolution = str(2 ** math.ceil(math.log2(max(resolutions, default=1000))))
+    resolution = str(2 ** math.ceil(math.log2(max(max(resolutions, default=1000),min(4096,max(0,minimum_resolution))))))
     if world.probe_resolution != resolution: world.probe_resolution = resolution
     _state = {'sources': sources, 'warnings': warnings, 'probe_resolution': world.probe_resolution,
               'graph_rebuilds': _rebuilds}

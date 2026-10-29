@@ -38,6 +38,8 @@ def runtime_settings():
         for key, preference in shadow_quality.PREFERENCES.items():
             if cmds.optionVar(exists=preference):
                 _runtime_config[key] = cmds.optionVar(query=preference)
+        if cmds.optionVar(exists='eeveeHdriResolution'):
+            _runtime_config['hdri_resolution']=int(cmds.optionVar(query='eeveeHdriResolution'))
     return _runtime_config
 
 
@@ -100,7 +102,7 @@ class Controller:
         self.playback_callback = om.MDGMessage.addForceUpdateCallback(self.time_changed)
         self.pre_render_callback = omui.MUiMessage.add3dViewPreRenderMsgCallback(panel, self.before_draw)
         try:
-            self.engine.start()
+            self.engine.start(exporter.color_management())
         except Exception as exc:
             self.startup_error = str(exc)
             self.engine.status = 'No se pudo iniciar Eevee: ' + str(exc)
@@ -147,7 +149,7 @@ class Controller:
             self.missing_view_since = None
             if self.suspended:
                 try:
-                    self.engine.start()
+                    self.engine.start(exporter.color_management())
                     self.startup_error = None
                     self.loading_timer.start(50)
                 except Exception:
@@ -261,6 +263,15 @@ class Controller:
     def snapshot(self, camera, width, height, state):
         color_management = exporter.color_management()
         if color_management != self.color_management:
+            initial=getattr(self.engine,'color_settings',None)
+            keys=('rendering_space','config_path','config_signature','native_ocio')
+            if initial is not None and any(initial.get(key)!=color_management.get(key) for key in keys):
+                # OCIO is loaded once by Blender. Release shared resources before
+                # restarting with a different configuration or scene-linear role.
+                self.suspend_view()
+                self.engine.start(color_management)
+                self.suspended=False
+                self.loading_timer.start(50)
             self.changes.structural = True
             self.color_management = color_management
         if self.changes.reconnect:
@@ -298,6 +309,7 @@ class Controller:
         data['color_management'] = color_management
         # Shared by interactive frames and the strict native playblast path.
         data['shadow_settings'] = shadow_quality.resolve(self.engine.config)
+        data['hdri_resolution'] = int(self.engine.config.get('hdri_resolution',2048))
         data['maya_frame'] = cmds.currentTime(query=True)
         frame_camera = getattr(self, 'viewport_camera', None)
         if frame_camera and frame_camera['path'] == data['camera']['path']:
@@ -365,7 +377,7 @@ class Controller:
         if self.capture_key == key:
             return
         if self.engine.process is None:
-            self.engine.start()
+            self.engine.start(exporter.color_management())
             self.suspended = self.waiting_for_view = False
             self.missing_view_since = None
             self.changes.structural = True

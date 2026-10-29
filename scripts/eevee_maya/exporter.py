@@ -21,23 +21,43 @@ def attr(node, name, default):
     return value
 
 
-def texture(node, attribute):
-    """Direct Maya file textures, including literal <UDIM> source paths."""
+def texture(node, attribute, resolution=2048):
+    """Direct image channels or cached read-only sampling of Maya 2D networks."""
     from .texture_paths import resolve
-    files = cmds.listConnections(node + "." + attribute, source=True,
-                                 destination=False, type="file") or []
-    if not files:
+    sources = cmds.listConnections(node + "." + attribute, source=True,
+                                   destination=False, plugs=True) or []
+    if not sources:
         return None
-    path = attr(files[0], "fileTextureName", "")
+    source=sources[0];file,channel=source.split('.',1)
+    file_kind=cmds.nodeType(file)
+    if file_kind not in ('file','aiImage'):
+        from .texture_bake import bake
+        return bake(cmds,source,resolution=resolution)
+    # Maya's sampler also preserves placement and color-balance operations for
+    # ordinary 0..1 images. UDIMs retain the dedicated tiled-image route.
+    adjusted = (attr(file,'repeatUV',(1,1)) != (1,1) or attr(file,'offset',(0,0)) != (0,0)
+                or attr(file,'rotateUV',0) != 0 or attr(file,'rotateFrame',0) != 0
+                or attr(file,'coverage',(1,1)) != (1,1) or attr(file,'translateFrame',(0,0)) != (0,0)
+                or attr(file,'colorGain',(1,1,1)) != (1,1,1) or attr(file,'colorOffset',(0,0,0)) != (0,0,0)
+                or attr(file,'invert',False) or attr(file,'alphaGain',1) != 1 or attr(file,'alphaOffset',0) != 0
+                or attr(file,'mirrorU',False) or attr(file,'mirrorV',False) or attr(file,'stagger',False)
+                or not attr(file,'wrapU',True) or not attr(file,'wrapV',True) or attr(file,'noiseUV',(0,0))!=(0,0)
+                or channel=='outAlpha' and attr(file,'alphaIsLuminance',False))
+    if adjusted and attr(file,'uvTilingMode',0)==0:
+        from .texture_bake import bake
+        return bake(cmds,source,resolution=resolution)
+    path = attr(file, "fileTextureName" if file_kind=='file' else 'filename', "")
     if not os.path.isabs(path):
         path = cmds.workspace(expandName=path)
-    pattern = attr(files[0], 'computedFileTextureNamePattern', '') or ''
+    pattern = attr(file, 'computedFileTextureNamePattern', '') or ''
     if pattern and not os.path.isabs(pattern):
         pattern = cmds.workspace(expandName=pattern)
-    result = resolve(path, attr(files[0], 'uvTilingMode', 0) == 3, pattern)
+    result = resolve(path, attr(file, 'uvTilingMode', 0) == 3, pattern)
     if result is None:
         return None
-    result['color_space'] = attr(files[0], 'colorSpace', 'sRGB')
+    result['color_space'] = attr(file, 'colorSpace', 'sRGB')
+    result['channel'] = channel
+    result['alpha_is_luminance'] = bool(attr(file,'alphaIsLuminance',False))
     return result
 
 
@@ -50,10 +70,14 @@ def normal_texture(node):
     source = sources[0]
     kind = cmds.nodeType(source)
     if kind in ("bump2d", "aiBump2d"):
-        spec = texture(source, "bumpValue" if kind == "bump2d" else "bumpMap")
+        spec = texture(source, "bumpValue" if kind == "bump2d" else "bumpMap",resolution=1024)
         if spec:
-            return {"texture": spec, "kind": "normal" if attr(source, "bumpInterp", 0) == 1 else "bump",
-                    "strength": attr(source, "bumpDepth", 1), "distance": attr(source, "bumpDepth", .1)}
+            normal = attr(source, "bumpInterp", 0) == 1
+            depth=attr(source,'bumpDepth',1)
+            # Strength and Distance previously both received bumpDepth, which
+            # squared small values. Blender world units equal Maya centimeters.
+            return {"texture": spec, "kind": "normal" if normal else "bump",
+                    "strength": depth if normal else 1, "distance": abs(depth), "invert": depth<0}
     if kind == "aiNormalMap":
         spec = texture(source, "input")
         if spec:
@@ -62,9 +86,19 @@ def normal_texture(node):
 
 
 def color_management():
-    return {'enabled': bool(cmds.colorManagementPrefs(query=True, cmEnabled=True)),
+    result = {'enabled': bool(cmds.colorManagementPrefs(query=True, cmEnabled=True)),
             'rendering_space': cmds.colorManagementPrefs(query=True, renderingSpaceName=True),
             'view': cmds.colorManagementPrefs(query=True, viewTransformName=True)}
+    result['display'] = cmds.colorManagementPrefs(query=True, displayName=True)
+    result['native_view'] = cmds.colorManagementPrefs(query=True, viewName=True)
+    path = cmds.colorManagementPrefs(query=True, configFilePath=True) or ''
+    location = os.environ.get('MAYA_LOCATION', '')
+    path = path.replace('<MAYA_RESOURCES>', os.path.join(location, 'resources'))
+    result['config_path'] = os.path.expandvars(path)
+    result['native_ocio'] = bool(cmds.colorManagementPrefs(query=True, ociov2Enabled=True) and os.path.isfile(result['config_path']))
+    if result['native_ocio']:
+        info=os.stat(result['config_path']);result['config_signature']=(info.st_mtime_ns,info.st_size)
+    return result
 
 
 def material(node):
@@ -91,6 +125,12 @@ def material(node):
         "color_texture": texture(node, color_attr),
         "metallic_texture": texture(node, "metalness") if standard else None,
         "roughness_texture": texture(node, "specularRoughness") if standard else None,
+        "specular_texture": texture(node, "specular") if standard else None,
+        "base_texture": texture(node, "base") if standard else None,
+        "coat_texture": texture(node, "coat") if standard else None,
+        "coat_roughness_texture": texture(node, "coatRoughness") if standard else None,
+        "transmission_texture": texture(node, "transmission") if standard else None,
+        "transmission_color_texture": texture(node, "transmissionColor") if standard else None,
         "emission": list(attr(node, "emissionColor", (0, 0, 0))),
         "emission_strength": attr(node, "emission", 0.0),
         "ambient_color": list(attr(node,'ambientColor',(0,0,0))) if classic else None,

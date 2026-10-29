@@ -1,5 +1,44 @@
-"""Map Maya's common scene-linear spaces and display views to Blender 5.2."""
+"""Reuse Maya OCIO when available; retain the legacy mapping as a fallback."""
+import json
+import os
+from pathlib import Path
+import re
+
+
+def prepare_native(source, directory):
+    """Create a session-local config. Never alter Maya's config or its LUTs.
+
+    Blender obtains its working space from the scene_linear role at startup.
+    Keep LUT paths anchored to the original config, including relative ctfs.
+    """
+    source = source or {}
+    path = Path(source.get('config_path') or '')
+    if not path.is_file() or not source.get('native_ocio', False):
+        return None
+    text = path.read_text(encoding='utf-8-sig')
+    space = source.get('rendering_space', 'ACEScg')
+    if not re.search(r'^  scene_linear:.*$', text, re.M):
+        return None
+    text = re.sub(r'^  scene_linear:.*$', '  scene_linear: '+json.dumps(space), text, flags=re.M)
+    match = re.search(r'^search_path:[ \t]*(.*)$', text, re.M)
+    if not match:
+        return None
+    value = match.group(1).strip().strip('"\'')
+    # Only scalar search paths are rewritten. Exotic custom configurations
+    # retain the established Blender fallback rather than being guessed.
+    if value.startswith('['):
+        return None
+    paths = [str(path.parent / item).replace('\\', '/') if not os.path.isabs(item) else item
+             for item in value.split(os.pathsep) if item]
+    paths.append(path.parent.as_posix())
+    # A YAML sequence is unambiguous for Windows absolute paths.
+    text = text[:match.start()]+'search_path: '+json.dumps(paths)+text[match.end():]
+    target = Path(directory)/'maya-color.ocio'
+    target.write_text(text, encoding='utf-8')
+    return target
 def image_space(source, noncolor=False):
+    if os.environ.get('EEVEE_NATIVE_OCIO') == '1':
+        return 'Raw' if noncolor else (source or 'sRGB')
     if noncolor or source.lower() in ('raw', 'non-color', 'utility - raw'):
         return 'Non-Color'
     return {'scene-linear Rec.709-sRGB': 'Linear Rec.709',
@@ -10,6 +49,12 @@ def image_space(source, noncolor=False):
 
 def resolve(source):
     source = source or {}
+    if os.environ.get('EEVEE_NATIVE_OCIO') == '1':
+        return {'working_space': source.get('rendering_space', 'ACEScg'),
+                'view': source.get('native_view') or source.get('view', '').split(' (')[0],
+                'display': source.get('display', 'sRGB'),
+                'source_space': source.get('rendering_space'), 'source_view': source.get('view'),
+                'view_approximation': False, 'native_ocio': True}
     space = source.get('rendering_space', 'Linear Rec.709')
     normalized = ''.join(c for c in space.lower() if c.isalnum())
     if normalized == 'acescg':

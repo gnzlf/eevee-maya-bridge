@@ -26,11 +26,26 @@ def transform(values):
     return CONVERSION @ Matrix([values[i:i + 4] for i in range(0, 16, 4)]).transposed()
 
 
+_material_images = {}
+
+
 def image_node(tree, specification, noncolor=False):
     if not specification:
         return None
     node = tree.nodes.new("ShaderNodeTexImage")
-    node.image = bpy.data.images.load(specification["path"], check_existing=True)
+    # Maya's file node owns the input transform, including when its RGB output
+    # drives a scalar socket. Only legacy untagged data maps assume Raw.
+    space=color_management.image_space(specification.get('color_space','sRGB'), noncolor and 'color_space' not in specification)
+    key=(specification['path'],specification.get('udim_pattern'),space)
+    image=_material_images.get(key)
+    if image is None:
+        image=bpy.data.images.load(specification['path'],check_existing=True)
+        # A file can drive both Base Color and scalar data. Color-space changes
+        # on a shared image must not silently alter the other material socket.
+        if image.colorspace_settings.name!=space and image.users:
+            image=image.copy()
+        _material_images[key]=image
+    node.image=image
     if specification.get("udim_pattern"):
         node.image.source = "TILED"
         node.image.filepath = specification["udim_pattern"]
@@ -40,10 +55,19 @@ def image_node(tree, specification, noncolor=False):
                 node.image.tiles.new(number)
         node.image.reload()
     try:
-        node.image.colorspace_settings.name = color_management.image_space(specification.get('color_space','sRGB'), noncolor)
+        node.image.colorspace_settings.name = space
     except TypeError:
-        node.image.colorspace_settings.name = 'Non-Color' if noncolor else 'sRGB'
-    return node
+        node.image.colorspace_settings.name = color_management.image_space('sRGB',noncolor)
+    output=node.outputs['Color'];channel=specification.get('channel','outColor')
+    if channel=='outAlpha':
+        if specification.get('alpha_is_luminance'):
+            gray=tree.nodes.new('ShaderNodeRGBToBW');tree.links.new(output,gray.inputs[0]);output=gray.outputs[0]
+        else:output=node.outputs['Alpha']
+    elif channel in ('outColorR','outColorG','outColorB'):
+        separate=tree.nodes.new('ShaderNodeSeparateColor');separate.mode='RGB'
+        tree.links.new(output,separate.inputs[0]);output=separate.outputs['RGB'.index(channel[-1])]
+    from types import SimpleNamespace
+    return SimpleNamespace(outputs={'Color':output,'Alpha':node.outputs['Alpha']})
 
 
 def set_normals(mesh, normals):
@@ -73,7 +97,8 @@ def make_material(spec, transmission_preview=False):
         mat.node_tree.links.new(volume.outputs["Volume"], output.inputs["Volume"])
         return mat
     shader = mat.node_tree.nodes.get("Principled BSDF")
-    mat['eevee_ambient_diffuse'] = max(0,spec.get('base_weight',1)) * (1-spec.get('metallic',0))
+    # Base weight is applied to the color below, including its texture.
+    mat['eevee_ambient_diffuse'] = 1-spec.get('metallic',0)
     shader.inputs["Base Color"].default_value = (*spec["color"], 1)
     shader.inputs["Metallic"].default_value = spec["metallic"]
     shader.inputs["Roughness"].default_value = spec["roughness"]
@@ -94,12 +119,31 @@ def make_material(spec, transmission_preview=False):
     for key, socket, noncolor in (("color_texture", "Base Color", False),
                                   ("metallic_texture", "Metallic", True),
                                   ("roughness_texture", "Roughness", True),
+                                  ("coat_texture", "Coat Weight", True),
+                                  ("coat_roughness_texture", "Coat Roughness", True),
+                                  ("transmission_texture", "Transmission Weight", True),
+                                  ("transmission_color_texture", "Transmission Color", False),
                                   ("specular_color_texture", "Specular Tint", False),
                                   ("opacity_texture", "Alpha", True),
                                   ("emission_texture", "Emission Color", False)):
         node = image_node(mat.node_tree, spec.get(key), noncolor)
         if node:
-            mat.node_tree.links.new(node.outputs["Color"], shader.inputs[socket])
+            # Principled has no separate transmission tint socket. The fast
+            # transmission surface below receives that color directly.
+            if socket in shader.inputs:mat.node_tree.links.new(node.outputs["Color"], shader.inputs[socket])
+    specular_image=image_node(mat.node_tree,spec.get('specular_texture'),True)
+    if specular_image:
+        scale=mat.node_tree.nodes.new('ShaderNodeMath');scale.operation='MULTIPLY';scale.inputs[1].default_value=.5
+        mat.node_tree.links.new(specular_image.outputs['Color'],scale.inputs[0]);mat.node_tree.links.new(scale.outputs[0],shader.inputs['Specular IOR Level'])
+    unweighted_color=[link.from_socket for link in shader.inputs['Base Color'].links]
+    if spec.get('base_weight',1)!=1 or spec.get('base_texture'):
+        tree=mat.node_tree;weighted=tree.nodes.new('ShaderNodeMixRGB');weighted.blend_type='MULTIPLY'
+        weighted.inputs[0].default_value=1;weighted.inputs[1].default_value=shader.inputs['Base Color'].default_value
+        weight=spec.get('base_weight',1);weighted.inputs[2].default_value=(weight,weight,weight,1)
+        for link in list(shader.inputs['Base Color'].links):tree.links.new(link.from_socket,weighted.inputs[1])
+        base_image=image_node(tree,spec.get('base_texture'),True)
+        if base_image:tree.links.new(base_image.outputs['Color'],weighted.inputs[2])
+        tree.links.new(weighted.outputs['Color'],shader.inputs['Base Color'])
     ambient=spec.get('ambient_color')
     incandescence=spec.get('incandescence')
     if ambient is not None and (any(ambient) or any(incandescence) or spec.get('ambient_texture') or spec.get('incandescence_texture')):
@@ -108,8 +152,7 @@ def make_material(spec, transmission_preview=False):
         tree=mat.node_tree
         multiply=tree.nodes.new('ShaderNodeMixRGB');multiply.blend_type='MULTIPLY';multiply.inputs[0].default_value=1
         multiply.inputs[1].default_value=(*spec['color'],1);multiply.inputs[2].default_value=(*ambient,1)
-        color_links=shader.inputs['Base Color'].links
-        if color_links:tree.links.new(color_links[0].from_socket,multiply.inputs[1])
+        if unweighted_color:tree.links.new(unweighted_color[0],multiply.inputs[1])
         ambient_image=image_node(tree,spec.get('ambient_texture'))
         if ambient_image:tree.links.new(ambient_image.outputs['Color'],multiply.inputs[2])
         addition=tree.nodes.new('ShaderNodeMixRGB');addition.blend_type='ADD';addition.inputs[0].default_value=1
@@ -126,9 +169,10 @@ def make_material(spec, transmission_preview=False):
             converter = mat.node_tree.nodes.new("ShaderNodeNormalMap" if normal["kind"] == "normal" else "ShaderNodeBump")
             converter.inputs["Strength"].default_value = normal.get("strength", 1)
             if normal["kind"] == "bump": converter.inputs["Distance"].default_value = normal.get("distance", .1)
+            if normal['kind']=='bump':converter.invert=normal.get('invert',False)
             mat.node_tree.links.new(image.outputs["Color"], converter.inputs["Color" if normal["kind"] == "normal" else "Height"])
             mat.node_tree.links.new(converter.outputs["Normal"], shader.inputs["Normal"])
-    if transmission_preview and spec.get('transmission', 0) > 0:
+    if transmission_preview and (spec.get('transmission', 0) > 0 or spec.get('transmission_texture')):
         # The fast viewport has no refraction trace behind eye shells. Mixing
         # transparent transmission with a Fresnel reflection keeps the iris
         # visible without enabling scene-wide ray tracing or altering Maya.
@@ -136,6 +180,8 @@ def make_material(spec, transmission_preview=False):
         shader.inputs['Transmission Weight'].default_value = 0
         transparent = tree.nodes.new('ShaderNodeBsdfTransparent')
         transparent.inputs['Color'].default_value = (*spec.get('transmission_color', (1, 1, 1)), 1)
+        tint_image=image_node(tree,spec.get('transmission_color_texture'))
+        if tint_image:tree.links.new(tint_image.outputs['Color'],transparent.inputs['Color'])
         reflection = tree.nodes.new('ShaderNodeBsdfAnisotropic')
         reflection.inputs['Color'].default_value = (*spec.get('specular_color', (1, 1, 1)), 1)
         tint_links = shader.inputs['Specular Tint'].links
@@ -152,12 +198,15 @@ def make_material(spec, transmission_preview=False):
         glass = tree.nodes.new('ShaderNodeMixShader')
         specular = tree.nodes.new('ShaderNodeMath');specular.operation = 'MULTIPLY';specular.use_clamp = True
         specular.inputs[1].default_value = spec.get('specular_weight', 1)
+        if specular_image:tree.links.new(specular_image.outputs['Color'],specular.inputs[1])
         tree.links.new(fresnel.outputs[0], specular.inputs[0])
         tree.links.new(specular.outputs[0], glass.inputs[0])
         tree.links.new(transparent.outputs[0], glass.inputs[1])
         tree.links.new(reflection.outputs[0], glass.inputs[2])
         surface = tree.nodes.new('ShaderNodeMixShader')
         surface.inputs[0].default_value = max(0, min(1, spec['transmission']))
+        transmission_image=image_node(tree,spec.get('transmission_texture'),True)
+        if transmission_image:tree.links.new(transmission_image.outputs['Color'],surface.inputs[0])
         tree.links.new(shader.outputs[0], surface.inputs[1])
         tree.links.new(glass.outputs[0], surface.inputs[2])
         # Apply the source opacity to both reflection and transmission.
@@ -298,14 +347,30 @@ def create_light(spec):
 
 
 def configure_color(request):
-    settings = color_management.resolve(request.get('color_management'))
+    source=dict(request.get('color_management') or {})
+    native=request.get('native') or {}
+    if native.get('viewTransformName'):
+        source['view']=native['viewTransformName']
+        source['native_view']=native['viewTransformName'].split(' (')[0]
+    if not native.get('cmEnabled',True):source['enabled']=False
+    settings = color_management.resolve(source or None)
     if bpy.data.colorspace.working_space != settings['working_space']:
         # Values from Maya already belong to its scene-linear working space.
         # Reinterpret them, rather than converting the old Blender values twice.
         bpy.ops.wm.set_working_color_space(working_space=settings['working_space'], convert_colors=False)
     scene = bpy.context.scene
+    if settings.get('native_ocio'):
+        if scene.display_settings.display_device != settings['display']:
+            scene.display_settings.display_device = settings['display']
+        if not source.get('enabled', True):
+            settings['view'] = 'Raw'
     if scene.view_settings.view_transform != settings['view']:
         scene.view_settings.view_transform = settings['view']
+    for key,default in (('exposure',0),('gamma',1)):
+        value=float(native.get(key,default))
+        if getattr(scene.view_settings,key)!=value:setattr(scene.view_settings,key,value)
+        settings[key]=value
+    settings['display_owner']='Maya' if request.get('native') else 'Blender'
     return settings
 
 
@@ -452,13 +517,14 @@ def render(request, output):
     from environment import sync_environment
     native = request.get('native', {})
     sync_environment(native.get('displayLights', 'all'), request.get('lights', []),
-                     native.get('selected_lights', []), native.get('shadows', True))
+                     native.get('selected_lights', []), native.get('shadows', True),request.get('hdri_resolution',0))
     if not any(s['kind'] == 'aiSkyDomeLight' for s in request.get('lights', [])):
         # Preserve the image backend's original neutral world illumination.
         ambient = scene.world.node_tree.nodes['EeveeAmbientLighting']
         ambient.inputs['Color'].default_value = (.12, .12, .12, 1)
         ambient.inputs['Strength'].default_value = .5
-    scene.render.image_settings.file_format = "PNG"
+    scene.render.image_settings.file_format = "OPEN_EXR" if Path(output).suffix.lower()=='.exr' else "PNG"
+    scene.render.image_settings.color_depth = '32' if Path(output).suffix.lower()=='.exr' else '8'
     scene.render.image_settings.color_mode = "RGBA"
     scene.render.filepath = str(output)
     bpy.ops.render.render(write_still=True)
@@ -510,7 +576,7 @@ def main():
             if signature != previous_geometry:
                 build_scene(request)
                 previous_geometry = signature
-            filename = "frame_%08d.png" % int(request_id)
+            filename = ("frame_%08d.exr" if request.get('native') else "frame_%08d.png") % int(request_id)
             render(request, session / filename)
             write_json(session / "response.json", {"id": request_id, "image": filename,
                        "seconds": time.monotonic() - started, "engine": "BLENDER_EEVEE",

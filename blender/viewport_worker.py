@@ -288,7 +288,7 @@ def tick():
         view, projection = worker.camera_matrices(cam,request['camera'],width,height)
         startup_progress('shaders')
         state["offscreen"].draw_view3d(scene, bpy.context.view_layer, state["space"], state["region"],
-                                      view, projection, do_color_management=True)
+                                      view, projection, do_color_management=not bool(request.get('native')))
         color_finished = time.perf_counter()
         with state["offscreen"].bind():
             audit=None

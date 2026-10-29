@@ -116,6 +116,11 @@ class SettingsWindow:
         cmds.button(label='Crear SkyDome y cargar HDRI…',command=self.create_hdri)
         self.hdri_column=cmds.columnLayout(adjustableColumn=True,rowSpacing=6)
         cmds.setParent(hdri_controls)
+        self.reflection_quality=cmds.optionMenu(label='Detalle mínimo de reflejos Eevee',changeCommand=self.set_hdri_resolution)
+        for label in ('Nativo','1024','2048','4096'):cmds.menuItem(label=label)
+        minimum=int(controller.engine.config.get('hdri_resolution',2048))
+        cmds.optionMenu(self.reflection_quality,edit=True,value=str(minimum) if minimum else 'Nativo')
+        cmds.text(label='2048 por defecto. 4096 conserva más detalle en materiales pulidos y consume más memoria. Nativo sigue solo la resolución de la SkyDome.',align='left',wordWrap=True)
         cmds.button(label='Cargar / reemplazar imagen HDRI…',command=self.load_hdri)
         cmds.button(label='Usar todas las luces de la escena en este viewport',command=lambda *_:self.set_lighting('Todas las luces'))
         cmds.text(label='Ocultar el fondo conserva la luz y los reflejos. Intensidad y exposición afectan ambos. La visibilidad del fondo solo regula su imagen.',align='left',wordWrap=True)
@@ -140,7 +145,7 @@ class SettingsWindow:
         cmds.optionMenu(menu, edit=True, value=str(controller.engine.config["max_width"]))
         cmds.text(label="La iluminación admite Point, Spot, Directional y Area. La respuesta de luz y materiales puede diferir de Viewport 2.0 y Arnold.", align="left", wordWrap=True)
         cmds.text(label="Light linking por objeto y sombras. Los vínculos por caras, motion blur y luces especiales de Arnold siguen sin soporte.", align="left", wordWrap=True)
-        cmds.text(label='El espacio lineal sigue ACEScg, Rec.709 o Rec.2020 de Maya. La vista ACES 1.x usa ACES 1.3 de Blender como aproximación; las vistas OCIO personalizadas pueden diferir.', align='left', wordWrap=True)
+        cmds.text(label='Usa la configuración OCIO de Maya cuando está disponible: espacio lineal, display y vista. Sin una configuración compatible utiliza la aproximación de Blender.', align='left', wordWrap=True)
         self.tabs=tabs;self.hdri_tab=hdri_tab
         cmds.tabLayout(tabs, edit=True, tabLabel=((viewport_tab,"Viewport"),(shadow_tab,"Sombras"),(camera_tab,"Cámara"),(light_tab,"Luz"),(hdri_tab,"HDRI"),(effects_tab,"Eevee")))
         self.timer.timeout.connect(self.refresh)
@@ -262,6 +267,12 @@ class SettingsWindow:
 
     def set_navigation(self,key,value):
         self.controller.engine.config[key]=value
+        self.controller.force=True
+
+    def set_hdri_resolution(self,label):
+        value=0 if label=='Nativo' else int(label)
+        self.controller.engine.config['hdri_resolution']=value
+        cmds.optionVar(intValue=('eeveeHdriResolution',value))
         self.controller.force=True
 
     def set_render_width(self, value):

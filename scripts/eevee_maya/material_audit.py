@@ -4,7 +4,8 @@ from .texture_paths import resolve
 
 
 SUPPORTED = ('standardSurface', 'aiStandardSurface', 'lambert', 'blinn', 'phong', 'aiStandardVolume')
-STANDARD = {'baseColor', 'metalness', 'specularRoughness', 'specularColor', 'opacity', 'emissionColor'}
+STANDARD = {'baseColor', 'base', 'metalness', 'specular', 'specularRoughness', 'specularColor',
+            'coat', 'coatRoughness', 'transmission', 'transmissionColor', 'opacity', 'emissionColor'}
 CLASSIC = {'color', 'ambientColor', 'incandescence', 'specularColor'}
 NORMAL = {'bump2d': 'bumpValue', 'aiBump2d': 'bumpMap', 'aiNormalMap': 'input'}
 
@@ -44,6 +45,15 @@ def audit(cmds, nodes=None, include_names=False):
             if resolve(path, tiled, pattern) is None:
                 issue('texture_not_readable', attribute, 'file')
 
+        def sampled_network(source, attribute):
+            from .texture_bake import SUPPORTED, fingerprint
+            if cmds.nodeType(source.split('.')[0]) not in SUPPORTED or not hasattr(cmds,'listAttr'):
+                return False
+            if fingerprint(cmds,source) is None:
+                return False
+            item.setdefault('translations',[]).append({'attribute':attribute,'method':'cached_maya_uv_samples'})
+            return True
+
         try:
             kind = item['kind'] = cmds.nodeType(node)
             if kind not in SUPPORTED:
@@ -73,14 +83,16 @@ def audit(cmds, nodes=None, include_names=False):
                             file_kind = cmds.nodeType(file_node)
                             if file_kind == 'file':
                                 check_file(file_node, attribute)
-                                if file_channel != 'outColor':
+                                if file_channel not in ('outColor','outAlpha','outColorR','outColorG','outColorB'):
                                     issue('texture_channel_approximated', attribute, file_kind)
-                            else:
+                            elif not sampled_network(file_plug,attribute):
                                 issue('unsupported_normal_connection', attribute, file_kind)
                     elif attribute in textures and source_kind == 'file':
                         check_file(source_node, attribute)
-                        if channel != 'outColor':
+                        if channel not in ('outColor','outAlpha','outColorR','outColorG','outColorB'):
                             issue('texture_channel_approximated', attribute, source_kind)
+                    elif attribute in textures and sampled_network(source,attribute):
+                        pass
                     else:
                         issue('untranslated_connection', attribute, source_kind)
         except (RuntimeError, ValueError, OSError):

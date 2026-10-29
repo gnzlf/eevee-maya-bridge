@@ -44,14 +44,13 @@ class MaterialAudit(unittest.TestCase):
         self.assertEqual({issue['code'] for issue in issues}, {'untranslated_connection', 'texture_not_readable'})
         self.assertNotIn('Client', json.dumps(report))
 
-    def test_file_alpha_and_bump_connections_do_not_silently_pass(self):
+    def test_supported_file_channels_and_bump_connections_are_recognized(self):
         cmds = self.commands(pairs=['Client:Skin.opacity', 'file1.outAlpha',
                                    'Client:Skin.normalCamera', 'bump1.outNormal'])
         with mock.patch('eevee_maya.material_audit.os.path.isfile', return_value=True):
             report = audit(cmds)
         issues = report['materials'][0]['issues']
-        self.assertEqual({issue['attribute'] for issue in issues}, {'opacity', 'normalCamera'})
-        self.assertTrue(all(issue['code'] == 'texture_channel_approximated' for issue in issues))
+        self.assertEqual(issues, [])
 
     def test_names_can_be_shown_locally_then_removed_for_export(self):
         report = audit(self.commands(), include_names=True)

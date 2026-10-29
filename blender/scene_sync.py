@@ -136,6 +136,7 @@ class SceneMirror:
         native = request["native"]
         local=any(s['kind'] in ('pointLight','spotLight') for s in request['lights'])
         signature = (request["lights"], native["displayLights"], native.get("selected_lights", []),native["shadows"],
+                     request.get('hdri_resolution',0),
                      self.geometry_revision if local else None,request.get('effects',{}).get('fog'),request.get('effects',{}).get('fog_distance'),
                      request.get('camera',{}).get('matrix') if local and request.get('effects',{}).get('fog') else None)
         if signature == self.light_signature:
@@ -199,7 +200,7 @@ class SceneMirror:
         for name in ("EeveeStudioKey", "EeveeStudioFill"):
             obj = bpy.data.objects.get(name)
             if obj: set_light_visibility(obj, False)
-        self.environment_state = sync_environment(mode, request['lights'], native.get('selected_lights', []), native['shadows'])
+        self.environment_state = sync_environment(mode, request['lights'], native.get('selected_lights', []), native['shadows'],request.get('hdri_resolution',0))
         self.light_signature = signature
         self.light_specs = effective_specs
         for key,collection in list(self.link_collections.items()):
