@@ -4,6 +4,8 @@ Viewport experimental de **Blender Eevee dentro de un panel de Maya 2024** en Wi
 
 ## Instalar en otra máquina
 
+**0.6.23 — respuesta al editar:** mover objetos, deformar o cambiar visibilidad activa correctamente la calidad interactiva. **Ajustes > Viewport > Ancho temporal al mover objetos o luces** permite elegir 640/960/1280/1920; al detenerse vuelve al ancho final y el playblast conserva sus dimensiones. El motor reutiliza buffers de hasta tres tamaños y evita reconfigurar una cámara o ajustes de Eevee que no cambiaron. Conserva AA, efectos y materiales. La caché consume memoria adicional para reducir las pausas al alternar resolución; no garantiza 30 FPS.
+
 **0.6.22 — materiales y color:** recupera redes 2D de Maya como layeredTexture, rampas y ruido mediante muestreo UV de Maya con caché EXR flotante. Conserva los canales RGB/alpha de las imágenes, corrige la escala del bump y amplía los mapas de specular, base, coat y transmisión. El transporte GPU entrega color lineal a Maya: la vista, exposición y gamma nativas se aplican una sola vez. La pestaña HDRI añade un detalle mínimo de reflejos de 2048 por defecto, con opción 4096 o Nativo. La primera evaluación de una red procedural tiene coste de preparación; navegar y deformar reutiliza la caché. No equivale a ejecutar todos los shaders de Arnold.
 
 1. Instala **Autodesk Maya 2024 de 64 bits** con su licencia.

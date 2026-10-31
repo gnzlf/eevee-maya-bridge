@@ -42,7 +42,10 @@ class SettingsWindow:
         cmds.checkBox(label='Calidad adaptativa al editar o reproducir',
                       value=bool(controller.engine.config.get('adaptive_quality',True)),
                       changeCommand=self.set_adaptive_quality)
-        cmds.text(label='Mientras editas usa hasta 960 píxeles y conserva las muestras AA de Maya. Al detenerte recupera la resolución elegida. El playblast conserva su resolución.',
+        edit_width=cmds.optionMenu(label='Ancho temporal al mover objetos o luces',changeCommand=self.set_interaction_width)
+        for width in (640,960,1280,1920):cmds.menuItem(label=str(width))
+        cmds.optionMenu(edit_width,edit=True,value=str(controller.engine.config.get('interaction_width',960)))
+        cmds.text(label='Con calidad adaptativa, usa este ancho durante la edición y conserva el AA y los efectos. Al detenerte recupera la resolución elegida. El playblast conserva su resolución.',
                   align='left',wordWrap=True)
         cmds.checkBox(label='Navegación de cámara más rápida',value=bool(controller.engine.config.get('fast_navigation',True)),
                       changeCommand=lambda value:self.set_navigation('fast_navigation',bool(value)))
@@ -267,6 +270,12 @@ class SettingsWindow:
 
     def set_navigation(self,key,value):
         self.controller.engine.config[key]=value
+        self.controller.force=True
+
+    def set_interaction_width(self,value):
+        width=int(value)
+        self.controller.engine.config['interaction_width']=width
+        cmds.optionVar(intValue=('eeveeInteractionWidth',width))
         self.controller.force=True
 
     def set_hdri_resolution(self,label):

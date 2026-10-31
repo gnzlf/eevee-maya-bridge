@@ -1,12 +1,12 @@
-Eevee Maya Bridge 0.6.22 mejora los materiales y la fidelidad del color y los reflejos HDRI.
+Eevee Maya Bridge 0.6.23 mejora la respuesta al mover objetos y luces con el viewport configurado en 1920.
 
-- Corrige la doble transformación de color: entrega imagen lineal a Maya y conserva sus controles nativos de vista, exposición y gamma. Blender reutiliza la configuración OCIO de Maya para interpretar las texturas mediante una copia temporal.
-- Recupera layeredTexture, rampas, ruido y otras redes 2D admitidas con muestreo UV de Maya y caché EXR flotante. Conserva el cuerpo y el iris de materiales que antes perdían sus conexiones.
-- Conserva canales Color/R/G/B/Alpha y espacios de entrada de imágenes directas; separa las imágenes que usan espacios diferentes. Amplía mapas de base, specular, coat y transmisión. Corrige la intensidad del bump que antes se aplicaba dos veces.
-- Añade Ajustes > HDRI > Detalle mínimo de reflejos Eevee: Nativo, 1024, 2048 por defecto o 4096. No modifica la resolución nativa de Arnold. La roughness sigue regulando el desenfoque del reflejo.
+- Corrige la calidad interactiva para movimientos de objetos, deformaciones y visibilidad. Antes podía permanecer en 1920 durante el arrastre aunque la calidad adaptativa estuviera activa.
+- Añade Ajustes > Viewport > Ancho temporal al mover objetos o luces: 640, 960, 1280 o 1920. Conserva el antialiasing y los efectos, recupera la resolución final al detenerse y mantiene la resolución exacta del playblast.
+- Reutiliza framebuffers y texturas GPU de hasta tres tamaños para reducir pausas al alternar entre previa y calidad completa. Mantiene vivas las generaciones pendientes de importación y evita sobrescribirlas antes de la confirmación de Maya.
+- Evita reconfigurar la cámara y propiedades de Eevee que no cambiaron. Conserva la sincronización de geometría y luces.
 
-La primera preparación de redes procedurales, o la edición de sus parámetros, tiene coste de muestreo; navegar y deformar reutiliza su caché. Se admiten redes 2D de UV 0..1: no se certifican procedurales animados, grafos dependientes de posición/cámara, UDIM dentro de redes, displacement ni todos los nodos de Arnold. La transmisión conserva el modo rápido transparente/Fresnel, sin equivalencia de refracción física. No se añade light linking ni pesos difuso/especular independientes al World.
+La caché retiene memoria GPU adicional entre tamaños. La calidad adaptativa reduce temporalmente la resolución durante el movimiento; puede desactivarse o configurarse en 1920 para conservar el tamaño completo. No se certifican 30 FPS sostenidos con todos los efectos en todas las escenas.
 
-Conserva la sincronización por fotograma y la integración MP4/MOV de Prism de 0.6.21. Guarda tu trabajo y reinicia Maya después de instalar la actualización.
+Validación: 112 pruebas de distribución, 48 ediciones de objetos y luces en una escena de producción, captura exacta a 1920×1080, 9 comprobaciones de importación y reutilización GPU, 30 comprobaciones del playblast de Prism y 8 comprobaciones del plugin instalado. En la prueba de movimiento de objetos, la mediana del render pasó de 45 a 31 ms al corregir la previa adaptativa de 960 píxeles; esta medida no representa la latencia total de Maya.
 
-Verificación: 105 pruebas de distribución; 15 comprobaciones gráficas de color y controles nativos; 10 comprobaciones de materiales en una escena de producción a 1920x1080; 8 de muestreo Maya y 5 de decodificación/shaders Blender; 30 de Prism con MP4/AVI/MOV, sonido, cámara y skin animados; 8 de carga, recarga y descarga del plugin instalado. No certifica equivalencia completa con Arnold ni 30 FPS.
+Guarda tu trabajo y reinicia Maya después de instalar la actualización.

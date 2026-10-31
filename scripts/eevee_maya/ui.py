@@ -40,6 +40,9 @@ def runtime_settings():
                 _runtime_config[key] = cmds.optionVar(query=preference)
         if cmds.optionVar(exists='eeveeHdriResolution'):
             _runtime_config['hdri_resolution']=int(cmds.optionVar(query='eeveeHdriResolution'))
+        if cmds.optionVar(exists='eeveeInteractionWidth'):
+            width=int(cmds.optionVar(query='eeveeInteractionWidth'))
+            if width in (640,960,1280,1920):_runtime_config['interaction_width']=width
     return _runtime_config
 
 

@@ -38,6 +38,10 @@ El bridge ya integra Eevee en el menú Renderer de Maya, pero todavía no ofrece
 
 Las principales deficiencias que se pueden corregir están en la traducción de materiales, los efectos de pantalla, la sincronización incremental y el tiempo entre una edición y su presentación. Instalar más bibliotecas de Blender no resuelve esos problemas: hace falta mejorar el código que conecta ambos programas.
 
+**Interacción en 0.6.23.** La detección de edición incluye los deltas binarios de matriz, puntos, normales y visibilidad. Antes solo seguía cámara/luces/efectos y podía mantener 1920 durante un arrastre de objetos. Los paquetes de geometría vacíos no prolongan la previa: tras detenerse recupera la resolución final. El ancho temporal para objetos/luces es configurable en 640/960/1280/1920 y conserva AA y efectos; desactivar calidad adaptativa mantiene la resolución final durante la edición. El playblast sigue su ruta de sincronización exacta y conserva Full HD.
+
+El worker reutiliza framebuffers y texturas compartidas por tamaño con una caché de hasta tres entradas. Solo reutiliza una entrada cuyos fotogramas ya fueron liberados por Maya; si hay una importación retrasada conserva la generación anterior hasta su confirmación. También evita escribir parámetros idénticos de cámara y Eevee cada fotograma. Se mantiene la validación de generaciones, los tres slots por tamaño y el control de vida de los handles. La contrapartida es más VRAM retenida entre tamaños; los cambios continuos de dimensiones expulsan entradas antiguas. Estas mejoras no aceleran por sí solas la evaluación de rigs ni garantizan tiempo real a 1920 con efectos costosos.
+
 “Sentirse nativo” requiere varias cosas a la vez: controles coherentes, respuesta rápida, imagen estable, selección y manipuladores correctos, captura fiable y recuperación de errores. La integración del menú ya está resuelta; la equivalencia visual y la latencia necesitan más trabajo.
 
 ## 2. Cómo funciona actualmente

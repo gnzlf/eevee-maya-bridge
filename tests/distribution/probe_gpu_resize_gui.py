@@ -27,7 +27,9 @@ def intercept(self,context):
         return dict(engine.frame)
     for width,height in ((1280,720),(1920,1080),(640,360),(1280,720)):
         delayed.append(old);old=submit(width,height)
-    checks['four_unreleased_generations_retained']=engine.last_response['retired_gpu_pools']==4
+    # Some old sizes can remain in the bounded reuse cache. The actual delayed
+    # imports below verify ownership, rather than requiring a retirement layout.
+    checks['unreleased_generations_retained']=engine.last_response['retired_gpu_pools']>0
     reports['delayed_sizes']=[[f['width'],f['height']] for f in delayed]
     for i,frame in enumerate(delayed):
         self.frame=frame;original(self,context)
@@ -38,6 +40,12 @@ def intercept(self,context):
     checks['acknowledged_pools_are_released']=engine.last_response['retired_gpu_pools']==0
     self.frame=dict(engine.frame);original(self,context)
     checks['current_generation_still_draws']=self.displayed_id==engine.received_id and not self.error
+    allocations=engine.last_response['gpu_resource_allocations']
+    for width,height in ((640,360),(1280,720)):
+        self.release();engine.shared.acknowledge(engine.received_id)
+        self.frame=submit(width,height);original(self,context)
+    checks['released_sizes_reuse_existing_gpu_resources']=engine.last_response['gpu_resource_allocations']==allocations and engine.last_response['gpu_resource_reuses']>=2
+    checks['reused_generation_draws_current_frame']=self.displayed_id==engine.received_id and not self.error
     state['completed']=True
 
 

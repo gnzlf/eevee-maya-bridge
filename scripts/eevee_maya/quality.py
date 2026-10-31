@@ -26,7 +26,11 @@ class InteractionQuality:
             self.navigation_at = now
         self.camera_signature = camera_signature
         signature = hashlib.sha256(pickle.dumps(controls, protocol=4)).digest()
-        if signature != self.signature:
+        # Mesh deltas include object matrices, evaluated points/normals and
+        # visibility. They do not change camera/light controls, but are edits
+        # too. Ignore the empty count header so idle restores full quality.
+        geometry_changed = bool(any((snapshot.get('mesh_delta') or b'')[:4]))
+        if signature != self.signature or geometry_changed:
             self.signature, self.changed_at = signature, now
         interactive = bool(config.get('adaptive_quality', True) and
                            (playing or now - self.changed_at < .4))

@@ -41,7 +41,7 @@ from eevee_maya.shared_frame import SharedFrame, SharedMailbox
 from eevee_maya.gpu_share import GpuShare
 from eevee_maya.mesh_packet import records
 from eevee_maya import shadow_quality
-from eevee_maya.gpu_lifetime import RetiredGpuPools
+from eevee_maya.gpu_lifetime import RetiredGpuPools, SizedGpuResources
 from scene_sync import SceneMirror, update_camera, update_effects, position_atmosphere, world_bounds
 import worker
 
@@ -56,6 +56,7 @@ responses = SharedMailbox(session.name, "response", 1024 * 1024)
 mirror = SceneMirror()
 state = {"last_id": 0, "offscreen": None, "depth_offscreen": None, "depth_batches": {},
          "last_effects": None, "area": None, "size": None, "retired_gpu": RetiredGpuPools()}
+state['resources']=SizedGpuResources(state['retired_gpu'])
 
 
 def startup_progress(stage, completed=0, total=0):
@@ -78,12 +79,8 @@ parent = kernel.OpenProcess(0x1000, False, args.parent_pid)
 def close():
     if state.get("pump"):
         bpy.context.window_manager.event_timer_remove(state["pump"])
-    for item in state.get("gpu_pool", []):
-        item.close()
+    state['resources'].close()
     state['retired_gpu'].close()
-    for key in ("offscreen", "depth_offscreen"):
-        if state[key]:
-            state[key].free()
     shared.close()
     requests.close()
     responses.close()
@@ -206,16 +203,18 @@ def tick():
         mirror_finished = time.perf_counter()
         rebuild_depth_batches(request)
         sync_finished = time.perf_counter()
-        cam = update_camera(request)
+        camera_key=(mirror.rebuilds,bpy.context.scene.camera.as_pointer(),request['camera'])
+        if camera_key!=state.get('camera_key'):
+            cam=update_camera(request);state['camera_key']=camera_key
+        else:cam=bpy.context.scene.camera
         # The shared-depth presentation applies the physical preview in Maya.
         # Applying Blender's DOF as well blurs the source before that pass and
         # makes a sharply focused surface impossible to recover downstream.
-        cam.data.dof.use_dof = False
+        if cam.data.dof.use_dof:cam.data.dof.use_dof=False
         # Offscreen drawing has no camera-object argument: Eevee still reads
         # the SpaceView3D clip range for culling, even with explicit matrices.
-        state["space"].clip_start=cam.data.clip_start
-        state["space"].clip_end=cam.data.clip_end
-        state["space"].lens=cam.data.lens
+        for name,value in (('clip_start',cam.data.clip_start),('clip_end',cam.data.clip_end),('lens',cam.data.lens)):
+            if getattr(state['space'],name)!=value:setattr(state['space'],name,value)
         effects_changed=(not state.get("effects_applied") or request.get("effects") != state["last_effects"]
                          or bpy.data.objects.get("EeveeAtmosphereVolume") is None)
         if effects_changed:
@@ -228,52 +227,57 @@ def tick():
                 state['bounds_points']=world_bounds(mirror.objects.values())
             position_atmosphere(request,bounds=state.get('bounds_points'));state["volume_view"]=volume_view
         scene = bpy.context.scene
-        scene.render.engine = "BLENDER_EEVEE"
-        scene.eevee.taa_samples = request.get("samples", 8)
+        if scene.render.engine!='BLENDER_EEVEE':scene.render.engine='BLENDER_EEVEE'
+        if scene.eevee.taa_samples!=request.get('samples',8):scene.eevee.taa_samples=request.get('samples',8)
         # IPC frames are independent snapshots. Reprojecting the previous
         # light/volume pose produces ghosting and flashes while editing in Maya.
         # Spatial AA still uses the requested sample count.
-        scene.eevee.use_taa_reprojection = False
+        if scene.eevee.use_taa_reprojection:scene.eevee.use_taa_reprojection=False
         native = request.get("native")
-        if native:
-            scene.eevee.use_shadows = bool(native["shadows"])
+        native_key=(mirror.rebuilds,native.get('shadows'),native.get('ao'),native.get('ao_amount'),native.get('ao_world_radius'),request.get('gpu_transport')) if native else None
+        if native and native_key!=state.get('native_settings'):
             ao = bool(native["ao"] and native["ao_amount"] > 0)
             # Native SSAO must also darken direct-lit surfaces without adding
             # environment illumination. Use the shared-depth GPU presentation.
-            scene.eevee.use_raytracing = ao and not request.get("gpu_transport",False)
-            scene.eevee.use_fast_gi = scene.eevee.use_raytracing
-            scene.eevee.fast_gi_method = "AMBIENT_OCCLUSION_ONLY"
-            scene.eevee.fast_gi_distance = native["ao_world_radius"]
+            for name,value in (('use_shadows',bool(native['shadows'])),('use_raytracing',ao and not request.get('gpu_transport',False)),
+                               ('use_fast_gi',ao and not request.get('gpu_transport',False)),
+                               ('fast_gi_method','AMBIENT_OCCLUSION_ONLY'),('fast_gi_distance',native['ao_world_radius'])):
+                if getattr(scene.eevee,name)!=value:setattr(scene.eevee,name,value)
             # AO must not silently enable the separate glossy reflection tracer.
             # Route all roughnesses through Fast GI's AO-only approximation.
-            scene.eevee.ray_tracing_options.trace_max_roughness=0
+            if scene.eevee.ray_tracing_options.trace_max_roughness!=0:scene.eevee.ray_tracing_options.trace_max_roughness=0
+            state['native_settings']=native_key
         shadow_settings = request.get('shadow_settings', {})
         shadow_state = shadow_quality.apply(scene.eevee, {
             'shadow_quality': shadow_settings.get('preset', 'high'),
             'shadow_pool_size': shadow_settings.get('pool', 'auto')})
         color_state = worker.configure_color(request)
-        state["space"].camera = cam
+        if state['space'].camera!=cam:state['space'].camera=cam
         width, height = request["width"], request["height"]
         gpu_transport = request.get("gpu_transport", False)
         if state["size"] != (width, height, gpu_transport):
             state["window_hidden_after_draw"]=False
-            # A response for the old size may still be waiting for Maya's first
-            # OpenSharedResource. Resize must not invalidate those handles.
-            state['retired_gpu'].retire(state.get('gpu_pool', []), max(state.get('gpu_frames', [0])))
-            state['retired_gpu'].collect(shared.presented_id)
-            state["gpu_pool"] = []
             state["gpu"] = None
-            for key in ("offscreen", "depth_offscreen"):
-                if state[key]:
-                    state[key].free()
-            state["offscreen"] = gpu.types.GPUOffScreen(width, height, format="RGBA16F")
-            state["depth_offscreen"] = gpu.types.GPUOffScreen(width, height, format="RGBA32F")
-            if gpu_transport:
-                state["generation"] = state.get("generation", 0) + 1
-                state["gpu_generation"] = session.name + "_g" + str(state["generation"])
-                state["gpu_pool"] = [GpuShare(state["gpu_generation"] + "_s" + str(i), width, height) for i in range(3)]
-                state["gpu_frames"] = [0, 0, 0]
+            def allocate():
+                offscreen=gpu.types.GPUOffScreen(width,height,format='RGBA16F')
+                depth=None;pool=[]
+                try:
+                    depth=gpu.types.GPUOffScreen(width,height,format='RGBA32F')
+                    state['generation']=state.get('generation',0)+1
+                    generation=session.name+'_g'+str(state['generation'])
+                    if gpu_transport:
+                        for i in range(3):pool.append(GpuShare(generation+'_s'+str(i),width,height))
+                except Exception:
+                    for resource in pool:resource.close()
+                    offscreen.free()
+                    if depth:depth.free()
+                    raise
+                return {'offscreen':offscreen,'depth_offscreen':depth,'pool':pool,'frames':[0]*len(pool),'generation':generation}
+            resources=state['resources'].acquire((width,height,gpu_transport),allocate,shared.presented_id)
+            state.update(offscreen=resources['offscreen'],depth_offscreen=resources['depth_offscreen'],
+                         gpu_pool=resources['pool'],gpu_frames=resources['frames'],gpu_generation=resources['generation'])
             state["size"] = (width, height, gpu_transport)
+        state['retired_gpu'].collect(shared.presented_id)
         if gpu_transport:
             slot = request["id"] % 3
             while state["gpu_frames"][slot] > shared.presented_id:
@@ -315,6 +319,8 @@ def tick():
                    "color_audit":audit,
                    "engine": "BLENDER_EEVEE_VIEWPORT", "transport": "gpu_shared_texture" if gpu_transport else "shared_memory",
                    "retired_gpu_pools":len(state['retired_gpu'].pending),
+                   "gpu_resource_allocations":state['resources'].allocations,
+                   "gpu_resource_reuses":state['resources'].reuses,
                    "meshes": len(mirror.objects), "scene_rebuilds": mirror.rebuilds,
                    "incremental_updates": mirror.updates, "width": width, "height": height,
                    "effects": request.get("effects", {}),
