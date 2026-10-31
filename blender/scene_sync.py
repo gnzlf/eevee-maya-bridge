@@ -9,6 +9,7 @@ from eevee_maya.mesh_packet import records
 from eevee_maya.lighting import same_light_links, set_light_visibility
 from environment import sync_environment
 from eevee_maya.light_range import influence_distance
+from eevee_maya import light_photometry
 
 
 class SceneMirror:
@@ -134,8 +135,9 @@ class SceneMirror:
         if "native" not in request:
             return
         native = request["native"]
-        local=any(s['kind'] in ('pointLight','spotLight') for s in request['lights'])
-        signature = (request["lights"], native["displayLights"], native.get("selected_lights", []),native["shadows"],
+        calibrated=any(s.get('intensity_mode')=='viewport2' for s in request['lights'])
+        local=any(s['kind'] in ('pointLight','spotLight') for s in request['lights']) or calibrated
+        signature = (request["lights"], native["displayLights"], native.get("selected_lights", []),native["shadows"],native.get('useDefaultMaterial') if calibrated else None,
                      request.get('hdri_resolution',0),
                      self.geometry_revision if local else None,request.get('effects',{}).get('fog'),request.get('effects',{}).get('fog_distance'),
                      request.get('camera',{}).get('matrix') if local and request.get('effects',{}).get('fog') else None)
@@ -147,9 +149,22 @@ class SceneMirror:
         self.ambient_enabled=ambient_enabled
         existing = {obj["maya_path"]: obj for obj in bpy.context.scene.objects if obj.type == "LIGHT" and "maya_path" in obj}
         sources=[]
+        def receiver_gain(names):
+            if native.get('useDefaultMaterial'):return math.pi
+            fractions=[]
+            for name in names:
+                mats=self.original_materials.get(name,[])
+                fractions.append(sum(m.get('eevee_maya_material_kind','') in light_photometry.CLASSIC for m in mats)/max(1,len(mats)))
+            return 1+(math.pi-1)*sum(fractions)/max(1,len(fractions))
         for spec in request['lights']:
             if spec['kind']=='aiSkyDomeLight':continue
-            if spec['kind'] in ('pointLight','spotLight'):
+            if spec['kind']=='directionalLight' and spec.get('intensity_mode')=='viewport2':
+                # A sun has no distance reference. Do not calculate world-space
+                # boxes for a deforming rig just to classify its material slots.
+                names=[n for n in spec.get('receivers',self.objects) if n in self.objects and self.objects[n].type=='MESH' and not self.objects[n].hide_viewport]
+                sources.append(dict(spec,receiver_gain=receiver_gain(names)))
+                continue
+            if spec['kind'] in ('pointLight','spotLight') or spec.get('intensity_mode')=='viewport2':
                 if self.light_bounds is None:
                     self.light_bounds={}
                     for name,mesh in self.objects.items():
@@ -158,12 +173,19 @@ class SceneMirror:
                         matrix=np.asarray(mesh.matrix_world,dtype=np.float64)
                         points=corners @ matrix[:3,:3].T+matrix[:3,3]
                         self.light_bounds[name]=(points.min(axis=0).tolist(),points.max(axis=0).tolist())
-                bounds=[self.light_bounds[n] for n in spec.get('receivers',self.light_bounds) if n in self.light_bounds]
+                names=[n for n in spec.get('receivers',self.light_bounds) if n in self.light_bounds]
+                bounds=[self.light_bounds[n] for n in names]
                 matrix=worker.transform(spec['matrix']);origin=matrix.translation
                 fog=request.get('effects',{})
                 volume_distance=(float(fog.get('fog_distance',100))+(origin-worker.transform(request['camera']['matrix']).translation).length) if fog.get('fog') else 0
                 distance=influence_distance(origin,bounds,spec.get('decay_reference',5),volume_distance)
                 spec=dict(spec,influence_distance=distance)
+                if spec.get('intensity_mode')=='viewport2':
+                    direction=-matrix.col[2].to_3d().normalized() if spec['kind'] in ('spotLight','areaLight','aiAreaLight') else None
+                    _,reference=light_photometry.receiver_reference(origin,bounds,spec.get('decay_reference',5),direction)
+                    # A stable blend avoids a pi-sized exposure jump when two
+                    # differently shaded characters swap nearest-receiver order.
+                    spec.update(viewport_reference=reference,receiver_gain=receiver_gain(names))
             sources.append(spec)
         lights=worker.expand_spot_profiles(sources)
         wanted = {spec["name"] for spec in lights}

@@ -4,6 +4,9 @@ Las pruebas gráficas crean escenas genéricas en un proceso de Maya separado. N
 
 ## Casos
 
+- `probe_light_intensity_gui.py`: compara los mismos valores de luz en Eevee y VP2, en pantalla y playblast, con color management activado y desactivado. `EEVEE_INTENSITY_ASSERT=1` exige un error de como máximo tres niveles de 8 bits por canal en las cartas de prueba. `EEVEE_INTENSITY_MATERIALS=1` recorre Lambert, Standard Surface y aiStandardSurface; `EEVEE_INTENSITY_EXTENDED=1` prueba area nativa y Arnold, escala, normalize y legacyIntensity. Exige `EEVEE_INTENSITY_PROBE` y un perfil nuevo `<salida>/intensity_regression_profile`.
+- `probe_light_photometry.py` se ejecuta con Blender en background y comprueba la mezcla estable de receptores, compensación volumétrica y retorno a la conversión anterior y al alcance automático de area.
+
 - `probe_area_ambient_gui.py`: area nativa y de Arnold, intensidad, orientación, escala y normalización; ambient, color, intensidad, ambientShade, posición, light linking, material por defecto y selección. Capturas a 1920×1080.
 - `probe_spot_gui.py`: intensidad, distancia, movimiento del receptor, sombras, escala del icono, dropoff, dirección, cono, selección y cámara trasladada/rotada.
 - `probe_local_volume_gui.py`: point y directional sobre una superficie; intensidad, color, selección y light linking; directional desde arriba; point independiente de su rotación. Comprueba además la atmósfera de point, area y spot, el botón real de activación y sus controles de volumen, color y selección. Point ilumina en todas direcciones; area respeta su orientación y spot conserva el cono.

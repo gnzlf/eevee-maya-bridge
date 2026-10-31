@@ -1,5 +1,7 @@
 # Eevee Maya Bridge
 
+En 0.6.24, **Ajustes > Luz > Intensidad de las luces > Aproximar Viewport 2.0** calibra la respuesta de las luces sin editar sus atributos en Maya. Ajusta No Decay y Linear a una distancia representativa de sus receptores enlazados, distingue las convenciones de materiales clásicos y Standard Surface y corrige la normalización de area. Conserva el brillo volumétrico anterior mediante una compensación independiente. **Conversión anterior de Eevee** recupera el comportamiento previo. La aproximación usa límites de objetos y una mezcla estable de sus familias de materiales: varios receptores a distancias o con materiales distintos pueden conservar diferencias. No cambia HDRI, exposición ni la gestión de color para ocultarlas.
+
 Viewport experimental de **Blender Eevee dentro de un panel de Maya 2024** en Windows de 64 bits. Maya conserva la escena, cámaras, rigs y deformadores; un proceso Blender dibuja las mallas evaluadas y comparte color/profundidad por GPU con el panel.
 
 ## Instalar en otra máquina

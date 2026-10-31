@@ -17,6 +17,7 @@ sys.path.insert(0, str(ROOT / "scripts"))
 from eevee_maya.protocol import read_json, write_json
 from eevee_maya.lighting import expand_spot_profiles
 from eevee_maya import shadow_quality, color_management
+from eevee_maya import light_photometry
 
 # Maya and Blender cameras both look along local -Z. Rotate the world Y-up -> Z-up.
 CONVERSION = Matrix(((1, 0, 0, 0), (0, 0, -1, 0), (0, 1, 0, 0), (0, 0, 0, 1)))
@@ -85,6 +86,7 @@ def set_normals(mesh, normals):
 def make_material(spec, transmission_preview=False):
     mat = bpy.data.materials.new(spec["name"])
     mat.use_nodes = True
+    mat['eevee_maya_material_kind']=spec['kind']
     if spec["kind"] == "aiStandardVolume":
         mat.node_tree.nodes.clear()
         output = mat.node_tree.nodes.new("ShaderNodeOutputMaterial")
@@ -295,26 +297,22 @@ def apply_light(obj, spec, previous=None):
     if changed("color"):data.color = spec["color"]
     # Maya intensity is not watts. Calibrate at one scene unit without the old
     # arbitrary x1000 boost which clipped spot/point lights into white.
-    if changed("intensity","exposure","decay","decay_reference", "ambient_shade", "normalize", "legacy_intensity", "size_x", "size_y"):
-        energy = max(0, spec["intensity"]) * 2 ** spec["exposure"] * (math.pi if data.type == "SUN" else 4*math.pi)
-        # Eevee exposes inverse-square falloff only. Other Maya modes are
-        # intensity-matched at centerOfIllumination, not exact distance curves.
-        if data.type!="SUN":energy *= max(.001,spec.get("decay_reference",5))**(2-int(spec.get("decay",2)))
-        if spec['kind'] == 'ambientLight':energy *= max(0, min(1, spec.get('ambient_shade', .45)))
-        if data.type == 'AREA':
-            if not spec.get('normalize', True):energy *= max(.000001,spec.get('size_x',2)*spec.get('size_y',2))
-            if spec.get('legacy_intensity',False):energy *= 12
-        data.energy=energy
+    photometric=("intensity","exposure","decay","decay_reference","ambient_shade","normalize","legacy_intensity",
+                 "size_x","size_y","intensity_mode","viewport_reference","receiver_gain")
+    if changed(*photometric):data.energy=light_photometry.energy(spec)
     if data.type != "SUN" and previous is None:
         # AREA retains Eevee's automatic range. SceneMirror supplies a finite
         # receiver range for point/spot lights, independent of their intensity.
         data.use_custom_distance=False
-    if data.type in ('POINT','SPOT') and changed('influence_distance') and spec.get('influence_distance'):
+    if data.type in ('POINT','SPOT','AREA') and changed('influence_distance') and spec.get('influence_distance'):
         data.use_custom_distance=True
         data.cutoff_distance=spec['influence_distance']
+    elif data.type!='SUN' and changed('influence_distance') and not spec.get('influence_distance'):
+        data.use_custom_distance=False
     if changed("diffuse"):data.diffuse_factor = float(spec.get("diffuse", True))
     if changed("specular"):data.specular_factor = 0 if spec['kind']=='ambientLight' else float(spec.get("specular", True))
-    if changed("volume","volume_factor"):data.volume_factor = max(0,spec.get("volume_factor",1)) if spec.get("volume",True) else 0
+    if changed("volume","volume_factor",*photometric):
+        data.volume_factor = max(0,spec.get("volume_factor",1))*light_photometry.volume_compensation(spec) if spec.get("volume",True) else 0
     if changed("shadows"):data.use_shadow = bool(spec.get("shadows", True))
     if data.type == "SPOT" and changed("cone_angle","penumbra","dropoff"):
         cone=max(.001,min(math.pi-.001,spec["cone_angle"]))

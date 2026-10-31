@@ -8,7 +8,7 @@ import maya.cmds as cmds
 import maya.utils
 from PySide2 import QtCore,QtGui
 
-ROOT=Path(__file__).resolve().parents[2]
+ROOT=Path(os.environ.get('EEVEE_INSTALLED_ROOT',Path(__file__).resolve().parents[2]))
 OUT=Path(os.environ['EEVEE_LOCAL_VOLUME_PROBE']).resolve()
 if Path(os.environ['MAYA_APP_DIR']).resolve()!=OUT/'local_volume_regression_profile':
  raise RuntimeError('Owned profile required')
@@ -91,10 +91,15 @@ def volume_tests():
   if kind=='spotLight':cmds.setAttr(light+'.coneAngle',35)
   cmds.select(parent)
   window=SettingsWindow(c);window.prepare_volume()
+  checks[kind+'_intensity_mode_control']=cmds.optionMenu(window.intensity_mode,query=True,value=True)=='Aproximar Viewport 2.0'
   checks[kind+'_volume_button']=cmds.getAttr(settings+'.volumetrics') and cmds.getAttr(light+'.eeveeVolume')
   window.timer.stop();cmds.deleteUI(window.window);cmds.select(clear=True)
   cmds.setAttr(light+'.eeveeVolumeFactor',0);off=capture(kind+'_volume_off',points)
   cmds.setAttr(light+'.eeveeVolumeFactor',1);on=capture(kind+'_volume_on',points)
+  c.engine.config['light_intensity_mode']='legacy';c.force=True
+  previous=capture(kind+'_volume_legacy',points)
+  checks[kind+'_volume_preserved_across_intensity_modes']=max(abs(a-b) for name in points for a,b in zip(on[name],previous[name]))<3
+  c.engine.config['light_intensity_mode']='viewport2';c.force=True
   delta={name:max(on[name])-max(off[name]) for name in points}
   checks[kind+'_volume_visible']=delta['front']>5
   reports[kind+'_volume_delta']=delta
@@ -131,6 +136,7 @@ def shadow_tests():
  points={'receiver':(480,270)}
  for kind in ('pointLight','areaLight','directionalLight','spotLight'):
   parent,light=shape(kind)
+  if kind=='areaLight':cmds.setAttr(light+'.intensity',16)
   cmds.setAttr(parent+'.translate',-3,0,5,type='double3');cmds.setAttr(parent+'.rotateY',-30.9637565)
   if kind=='areaLight':cmds.setAttr(parent+'.scale',.25,.25,1,type='double3')
   cmds.setAttr(light+'.useRayTraceShadows',True)

@@ -2,7 +2,7 @@
 import maya.cmds as cmds
 import maya.api.OpenMaya as om
 from . import native_controls, shadow_quality
-from . import graphics, maya_lights, hdri
+from . import graphics, maya_lights, hdri, light_photometry
 from .ui import QtCore
 
 WINDOW = "eeveeViewportSettings"
@@ -102,6 +102,11 @@ class SettingsWindow:
         cmds.setParent(tabs)
         light_tab = cmds.scrollLayout(childResizable=True)
         light_controls=cmds.columnLayout(adjustableColumn=True,rowSpacing=6)
+        self.intensity_mode=cmds.optionMenu(label='Intensidad de las luces',changeCommand=self.set_intensity_mode)
+        for label,key in light_photometry.LABELS:cmds.menuItem(label=label)
+        mode=controller.engine.config.get('light_intensity_mode','viewport2')
+        cmds.optionMenu(self.intensity_mode,edit=True,value=next(label for label,key in light_photometry.LABELS if key==mode))
+        cmds.text(label='Aproxima Viewport 2.0 sin cambiar las luces de Maya. El decaimiento se ajusta al receptor principal; varios materiales o distancias pueden diferir. Conserva la intensidad volumétrica anterior.',align='left',wordWrap=True)
         cmds.text(label="Selecciona una luz Maya para editar sus atributos nativos.",align="left",wordWrap=True)
         self.light_column=cmds.columnLayout(adjustableColumn=True,rowSpacing=6)
         cmds.setParent(light_controls)
@@ -282,6 +287,12 @@ class SettingsWindow:
         value=0 if label=='Nativo' else int(label)
         self.controller.engine.config['hdri_resolution']=value
         cmds.optionVar(intValue=('eeveeHdriResolution',value))
+        self.controller.force=True
+
+    def set_intensity_mode(self,label):
+        mode=next(key for text,key in light_photometry.LABELS if text==label)
+        self.controller.engine.config['light_intensity_mode']=mode
+        cmds.optionVar(stringValue=('eeveeLightIntensityMode',mode))
         self.controller.force=True
 
     def set_render_width(self, value):

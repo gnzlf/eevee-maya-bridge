@@ -49,7 +49,9 @@ def tick():
     try:
         area=state['area'];parent=cmds.listRelatives(area,parent=True,fullPath=True)[0]
         cmds.setAttr(area+'.intensity',0);dark=capture('area_zero')
-        cmds.setAttr(area+'.intensity',1);lit=capture('area_one')
+        # VP2's normalized area convention needs more than one unit at this
+        # distance. Test a visible midtone rather than the previous overboost.
+        cmds.setAttr(area+'.intensity',16);lit=capture('area_reference')
         checks['native_area_intensity_lights_geometry']=max(lit)>max(dark)+.1
         cmds.setAttr(parent+'.rotateY',180);back=capture('area_back')
         checks['native_area_direction_is_one_sided']=max(back)<max(lit)*.2
@@ -64,7 +66,7 @@ def tick():
         arnold=cmds.shadingNode('aiAreaLight',asLight=True)
         arnold_shape=cmds.listRelatives(arnold,shapes=True,fullPath=True)[0]
         cmds.setAttr(arnold+'.translateZ',3)
-        cmds.setAttr(arnold_shape+'.intensity',5)
+        cmds.setAttr(arnold_shape+'.intensity',32)
         cmds.setAttr(arnold_shape+'.color',.02,.05,1,type='double3')
         rgb=capture('arnold_area')
         checks['arnold_area_is_detected_and_lights_geometry']=rgb[2]>.15 and rgb[2]>rgb[0]*1.5

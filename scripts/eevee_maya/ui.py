@@ -15,7 +15,7 @@ try:
 except ImportError:
     from PySide2 import QtCore
 
-from . import exporter, viewport, native_controls, capture, shadow_quality
+from . import exporter, viewport, native_controls, capture, shadow_quality, light_photometry
 from .engine import Engine, ROOT, settings
 from .protocol import write_json
 from .changes import SceneChanges
@@ -43,6 +43,9 @@ def runtime_settings():
         if cmds.optionVar(exists='eeveeInteractionWidth'):
             width=int(cmds.optionVar(query='eeveeInteractionWidth'))
             if width in (640,960,1280,1920):_runtime_config['interaction_width']=width
+        if cmds.optionVar(exists='eeveeLightIntensityMode'):
+            mode=cmds.optionVar(query='eeveeLightIntensityMode')
+            if mode in light_photometry.MODES:_runtime_config['light_intensity_mode']=mode
     return _runtime_config
 
 
@@ -308,6 +311,8 @@ class Controller:
         links = self.light_links.read(self.mesh_names, [light['name'] for light in data['lights']])
         for light in data['lights']:
             light.update(links[light['name']])
+            if light['kind']!='aiSkyDomeLight':
+                light['intensity_mode']=self.engine.config.get('light_intensity_mode','viewport2')
         native_controls.apply(data, state)
         data['color_management'] = color_management
         # Shared by interactive frames and the strict native playblast path.

@@ -20,7 +20,7 @@ def settings():
                 "max_width": 640, "samples": 1, "interval_ms": 1, "studio": False,
                 "backend": "viewport", "adaptive_quality": True, "interaction_width": 960,
                 "fast_navigation": True, "navigation_width": 640,
-                "shadow_quality": "high", "shadow_pool_size": "auto"}
+                "shadow_quality": "high", "shadow_pool_size": "auto", "light_intensity_mode":"viewport2"}
     path = ROOT / "config.json"
     if path.exists():
         defaults.update(read_json(path))
@@ -28,6 +28,7 @@ def settings():
     if ROOT.parent.name == 'versions':
         user_path = ROOT.parent.parent / 'config.json'
         if user_path.exists():defaults.update(read_json(user_path))
+    if defaults.get('light_intensity_mode') not in ('viewport2','legacy'):defaults['light_intensity_mode']='viewport2'
     return defaults
 
 

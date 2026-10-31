@@ -1,12 +1,13 @@
-Eevee Maya Bridge 0.6.23 mejora la respuesta al mover objetos y luces con el viewport configurado en 1920.
+Eevee Maya Bridge 0.6.24 acerca la intensidad de las luces a Viewport 2.0 sin editar sus atributos en Maya.
 
-- Corrige la calidad interactiva para movimientos de objetos, deformaciones y visibilidad. Antes podía permanecer en 1920 durante el arrastre aunque la calidad adaptativa estuviera activa.
-- Añade Ajustes > Viewport > Ancho temporal al mover objetos o luces: 640, 960, 1280 o 1920. Conserva el antialiasing y los efectos, recupera la resolución final al detenerse y mantiene la resolución exacta del playblast.
-- Reutiliza framebuffers y texturas GPU de hasta tres tamaños para reducir pausas al alternar entre previa y calidad completa. Mantiene vivas las generaciones pendientes de importación y evita sobrescribirlas antes de la confirmación de Maya.
-- Evita reconfigurar la cámara y propiedades de Eevee que no cambiaron. Conserva la sincronización de geometría y luces.
+- Añade Ajustes > Luz > Intensidad de las luces > Aproximar Viewport 2.0, activado por defecto. Conversión anterior de Eevee permite recuperar la iluminación previa.
+- Calibra Point, Spot, Directional, Area y Ambient contra cartas de Lambert, Standard Surface y aiStandardSurface. Distingue sus convenciones de intensidad y corrige normalize/legacyIntensity de Area.
+- No Decay y Linear se aproximan a una distancia representativa de receptores visibles y enlazados. La mezcla de familias de materiales se mantiene estable al cambiar qué objeto está más cerca.
+- Conserva la potencia volumétrica previa mediante una compensación independiente. Mantiene los controles de volumen, selección, sombras y color.
+- El modo se guarda como preferencia de Maya. La conversión también se aplica al playblast; no cambia HDRI, exposición ni gestión de color.
 
-La caché retiene memoria GPU adicional entre tamaños. La calidad adaptativa reduce temporalmente la resolución durante el movimiento; puede desactivarse o configurarse en 1920 para conservar el tamaño completo. No se certifican 30 FPS sostenidos con todos los efectos en todas las escenas.
+La coincidencia es aproximada. Eevee conserva caída cuadrática: varios receptores a distancias diferentes, límites de objetos amplios o mezclas de materiales pueden diferir de VP2. No certifica equivalencia por cara, igualdad con Arnold ni mejoras de FPS. Las escenas iluminadas antes pueden cambiar de aspecto con el modo nuevo; utiliza Conversión anterior de Eevee para conservar su conversión.
 
-Validación: 112 pruebas de distribución, 48 ediciones de objetos y luces en una escena de producción, captura exacta a 1920×1080, 9 comprobaciones de importación y reutilización GPU, 30 comprobaciones del playblast de Prism y 8 comprobaciones del plugin instalado. En la prueba de movimiento de objetos, la mediana del render pasó de 45 a 31 ms al corregir la previa adaptativa de 960 píxeles; esta medida no representa la latencia total de Maya.
+Validación: 118 pruebas de distribución y 8 comprobaciones del plugin instalado; 35 comparaciones de luces, intensidades y distancias con un error máximo de 2 niveles sobre 255 en pantalla y captura; 15 cartas con Lambert/Standard Surface/aiStandardSurface; 14 casos de escala y normalización de Area nativa y Arnold. También pasaron 96 comprobaciones de volumen y cambio de modo, 33 de sombras y 9 de mezcla de receptores y compatibilidad. Las mediciones corresponden a escenas genéricas controladas.
 
 Guarda tu trabajo y reinicia Maya después de instalar la actualización.
