@@ -37,7 +37,11 @@ def tick():
   cmds.setAttr(spot+'.intensity',0);dark=capture('zero')
   cmds.setAttr(spot+'.intensity',1);lit=capture('default')
   checks['new_default_spot_lights_surface']=lit>dark+25
-  cmds.setAttr(spot+'.intensity',.1);dim=capture('dim');checks['intensity_controls_render']=dark+5<dim<lit-15
+  # Use a midtone: the native OCIO view can map intensity .1 onto the
+  # five-code-value toe, making the old strict >5 threshold ambiguous.
+  cmds.setAttr(spot+'.intensity',.25);dim=capture('dim')
+  energy=reports['dim']['lights'][0]['energy'];full=reports['default']['lights'][0]['energy']
+  checks['intensity_controls_render']=dark+5<dim<lit-15 and abs(energy/full-.25)<1e-5
   cmds.setAttr(parent+'.translateZ',25);cmds.setAttr(spot+'.intensity',1);far=capture('far');checks['normal_spot_is_not_culled_at_25_cm']=far>dark+.5
   cmds.setAttr(parent+'.translateZ',5)
   cmds.setAttr(state['plane']+'.translateZ',-20);moved=capture('receiver_moved');checks['moving_receiver_updates_range']=abs(moved-far)<3
