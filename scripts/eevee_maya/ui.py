@@ -94,6 +94,11 @@ class Controller:
         self.waiting_for_view = False
         self.missing_view_since = None
         self.suspended = False
+        self.parked = False
+        self.warm_ready = False
+        self.resuming = False
+        self.resume_after_id = 0
+        self.viewer_owner = None
         self.capture_active = False
         self.capture_key = None
         self.capture_records = []
@@ -117,20 +122,34 @@ class Controller:
 
     def refresh_loading(self):
         if capture.active(): return
+        if self.engine.gpu and self.engine.received_id and viewport.register().gpu_image.displayed_id:
+            self.warm_ready=True
         if self.presented_once:
+            self.warm_ready=True
             self.loading_timer.stop();return
         if not cmds.modelPanel(self.panel, exists=True):
-            stop();return
+            if self.warm_ready:self.park()
+            else:stop()
+            return
         if cmds.modelEditor(self.panel, query=True, rendererOverrideName=True) != viewport.NAME:
-            stop();return
+            if self.warm_ready:self.park()
+            else:stop()
+            return
         view = panel_view(self.panel)
         if view is not None: view.refresh(False, True)
 
     def tick(self, *args, refresh=True):
         if self.in_tick or self.capture_syncing or capture.active():
             return
+        if self.presented_once or (self.engine.gpu and self.engine.received_id and viewport.register().gpu_image.displayed_id):
+            self.warm_ready=True
         if not cmds.modelPanel(self.panel, exists=True):
-            stop()
+            if self.warm_ready:self.park()
+            else:stop()
+            return
+        if cmds.modelEditor(self.panel,query=True,rendererOverrideName=True)!=viewport.NAME:
+            if self.warm_ready:self.park()
+            else:stop()
             return
         # Maya retains modelPanel nodes after closing a tear-off or rebuilding
         # a layout. Their M3dView may temporarily be unavailable (or 1x1).
@@ -141,7 +160,9 @@ class Controller:
             self.waiting_for_view = True
             self.engine.status = ("En pausa: renderizador liberado hasta que vuelva el panel" if self.suspended
                                   else "En pausa: esperando la vista del panel de Maya")
-            if not self.suspended and time.monotonic() - self.missing_view_since >= 3:
+            if self.warm_ready:
+                self.park()
+            elif not self.suspended and time.monotonic() - self.missing_view_since >= 3:
                 try:
                     self.suspend_view()
                 except Exception:
@@ -150,6 +171,13 @@ class Controller:
                     return
             self.timer.setInterval(100)
             return
+        if self.parked:
+            try:self.resume()
+            except Exception:
+                self.startup_error=traceback.format_exc()
+                self.engine.status='No se pudo reanudar Eevee'
+                self.timer.setInterval(250);self.loading_timer.start(250)
+                return
         if self.waiting_for_view:
             self.waiting_for_view = False
             self.missing_view_since = None
@@ -179,13 +207,16 @@ class Controller:
             if self.last_quality!=self.engine.config["max_width"]:
                 sync_quality_menu(self.engine.config["max_width"])
                 self.last_quality=self.engine.config["max_width"]
-            if cmds.modelEditor(self.panel,query=True,rendererOverrideName=True)!=viewport.NAME:
-                stop()
-                return
             if self.startup_error and self.engine.process is None:
                 self.timer.setInterval(250)
                 return
             received = self.engine.poll()
+            if received and self.resume_after_id and self.engine.received_id<self.resume_after_id:
+                # A queued image belongs to the previous panel/camera. It will
+                # never be imported; release it so a full producer queue drains.
+                if self.engine.shared:self.engine.shared.acknowledge(self.engine.received_id)
+                self.engine.frame=None
+                received=False
             if not self.presented_once and (self.engine.last_response.get('error') or
                     self.engine.process is not None and self.engine.process.poll() is not None):
                 self.startup_error = self.engine.last_response.get('error') or self.engine.status
@@ -228,6 +259,10 @@ class Controller:
                 self.timings["refresh_ms"] = (time.perf_counter() - refresh_started) * 1000
                 if not self.engine.shared:
                     self.engine.prune_frames()
+            if self.presented_once:
+                self.warm_ready=True
+                self.resuming=False
+                self.resume_after_id=0
             if self.engine.available:
                 if not self.engine.sent_id:
                     self.engine.startup_stage = {'stage':'export'}
@@ -370,6 +405,10 @@ class Controller:
             self.capture_syncing = False
 
     def accept_capture_response(self):
+        if self.resume_after_id and self.engine.received_id<self.resume_after_id:
+            if self.engine.shared:self.engine.shared.acknowledge(self.engine.received_id)
+            self.engine.frame=None
+            return
         override = viewport.register()
         if self.engine.frame:
             override.set_frame(self.engine.frame)
@@ -379,6 +418,7 @@ class Controller:
             override.set_image(self.engine.image)
 
     def capture_frame(self, width, height):
+        if self.parked:self.resume()
         target = cmds.currentTime(query=True)
         camera = cmds.modelPanel(self.panel, query=True, camera=True)
         key = (target, width, height, camera)
@@ -413,19 +453,62 @@ class Controller:
     def close(self):
         self.timer.stop()
         self.loading_timer.stop()
-        om.MMessage.removeCallback(self.playback_callback)
         try:
-            om.MMessage.removeCallback(self.pre_render_callback)
-        except RuntimeError:
-            pass  # Maya may already have destroyed the callback with its view.
-        self.changes.close()
-        self.light_links.close()
-        if self.scene_stream:
-            self.scene_stream.close()
-            self.scene_stream = None
-        if cmds.modelPanel(self.panel, exists=True) and cmds.modelEditor(self.panel,query=True,rendererOverrideName=True)==viewport.NAME:
-            cmds.modelEditor(self.panel, edit=True, rendererOverrideName="")
-        self.engine.stop()
+            for callback in (self.playback_callback,self.pre_render_callback):
+                try:om.MMessage.removeCallback(callback)
+                except RuntimeError:pass  # The view may already be destroyed.
+            self.changes.close()
+            self.light_links.close()
+            if self.scene_stream:
+                self.scene_stream.close()
+                self.scene_stream = None
+            # Maya may already have removed the renderer during shutdown.
+            # Cleanup must never register it again or strand its worker.
+            override=viewport._override
+            if override is not None:
+                override.gpu_image.release();override.quad.frame=None;override.has_image=False
+            if cmds.modelPanel(self.panel, exists=True) and cmds.modelEditor(self.panel,query=True,rendererOverrideName=True)==viewport.NAME:
+                cmds.modelEditor(self.panel, edit=True, rendererOverrideName="")
+        finally:self.engine.stop()
+
+    def park(self):
+        """Keep the one scene/worker in memory, without exporting or drawing."""
+        self.parked=True
+        self.loading_timer.stop()
+        self.engine.playing=False
+        self.timer.setInterval(250)
+        self.engine.status='Eevee en pausa · escena conservada en memoria'
+
+    def resume(self):
+        if self.engine.process is None or self.engine.process.poll() is not None:
+            self.suspend_view()
+            self.engine.start(exporter.color_management())
+            self.suspended=False
+        override=viewport.register()
+        held=override.gpu_image.frame
+        override.gpu_image.frame=None;override.gpu_image.displayed_id=0
+        override.gpu_image.error=None
+        override.quad.frame=None;override.has_image=False
+        if held and self.engine.shared:self.engine.shared.acknowledge(held['id'])
+        self.engine.frame=self.engine.image=None
+        self.resume_after_id=self.engine.sent_id+1
+        self.parked=False;self.waiting_for_view=False;self.missing_view_since=None
+        self.presented_once=False;self.resuming=self.warm_ready;self.resumed_at=time.monotonic()
+        self.capture_key=None;self.viewport_camera=None
+        self.changes.dirty=True;self.force=True
+        self.timer.start(int(self.engine.config['interval_ms']));self.loading_timer.start(50)
+
+    def bind_panel(self,panel,status=None):
+        """Transfer the existing worker; only camera/panel callbacks change."""
+        changed=panel!=self.panel
+        if changed:
+            callback=omui.MUiMessage.add3dViewPreRenderMsgCallback(panel,self.before_draw)
+            try:om.MMessage.removeCallback(self.pre_render_callback)
+            except RuntimeError:pass
+            self.pre_render_callback=callback;self.panel=panel
+        self.status_label=status
+        if changed or self.parked or self.waiting_for_view:self.resume()
+        return self
 
     def suspend_view(self):
         """A closed tear-off must not keep a complete Blender scene in VRAM."""
@@ -443,6 +526,8 @@ class Controller:
         self.changes.structural = True
         self.force = True
         self.suspended = True
+        self.parked=self.warm_ready=self.resuming=False
+        self.resume_after_id=0
         self.engine.status = "En pausa: renderizador liberado hasta que vuelva el panel"
 
 
@@ -451,6 +536,16 @@ def stop(*args):
     if _controller:
         _controller.close()
         _controller = None
+
+
+def start_or_bind(panel,status=None):
+    global _controller
+    if (_controller and not _controller.startup_error and _controller.engine.process is not None
+            and _controller.engine.process.poll() is None):
+        return _controller.bind_panel(panel,status)
+    stop()
+    _controller=Controller(panel,status)
+    return _controller
 
 
 def panel_view(panel):
@@ -541,7 +636,10 @@ def show(*args):
     api = render.MRenderer.drawAPI()
     if api == render.MRenderer.kDirectX11:
         raise RuntimeError("Eevee Bridge requiere OpenGL: cambia Display > Viewport 2.0 a OpenGL y reinicia Maya.")
-    stop()
+    if _controller and _controller.viewer_owner:_controller.viewer_owner['controller']=None
+    for candidate in cmds.getPanel(type='modelPanel') or []:
+        if cmds.modelEditor(candidate,query=True,rendererOverrideName=True)==viewport.NAME:
+            cmds.modelEditor(candidate,edit=True,rendererOverrideName='')
     if cmds.window(WINDOW, exists=True):
         cmds.deleteUI(WINDOW)
     viewport.register().has_image = False
@@ -579,8 +677,9 @@ def show(*args):
                                 (pane, "left", 0), (pane, "right", 0), (pane, "bottom", 0)],
                     attachControl=[(pane, "top", 0, bar)])
     cmds.showWindow(window)
-    _controller = Controller(panel, status)
+    _controller = start_or_bind(panel, status)
     owner["controller"] = _controller
+    _controller.viewer_owner=owner
     cmds.scriptJob(uiDeleted=[window, window_closed], runOnce=True)
     return _controller
 
@@ -601,16 +700,17 @@ def attach(panel=None, *args):
         raise RuntimeError("Eevee Bridge requiere OpenGL. Configuralo en Preferences > Display y reinicia Maya.")
     if render.MRenderer.findRenderOverride(viewport.NAME) is None:
         cmds.loadPlugin(str(ROOT / "plug-ins" / "eeveeBridge.py"))
-    stop()
+    if _controller and _controller.viewer_owner:_controller.viewer_owner['controller']=None
     if cmds.window(WINDOW, exists=True):
         cmds.deleteUI(WINDOW)
-    for other in panels:
+    for other in cmds.getPanel(type='modelPanel') or []:
         if other != panel and cmds.modelPanel(other, exists=True):
             if cmds.modelEditor(other, query=True, rendererOverrideName=True) == viewport.NAME:
                 cmds.modelEditor(other, edit=True, rendererOverrideName="")
-    viewport.register().has_image = False
+    if _controller is None or _controller.panel!=panel or _controller.parked:
+        viewport.register().has_image = False
     cmds.modelEditor(panel, edit=True, rendererName="vp2Renderer", rendererOverrideName=viewport.NAME)
-    _controller = Controller(panel, None)
+    _controller = start_or_bind(panel, None)
     return _controller
 
 
@@ -636,6 +736,7 @@ def install_menu():
     cmds.menuItem(label="Ajustes del viewport Eevee", command=show_settings)
     cmds.menuItem(label='Restaurar opción Renderer > Eevee', command=restore_renderer)
     cmds.menuItem(label="Recargar escena en Eevee", command=refresh)
+    cmds.menuItem(label='Detener Eevee y liberar memoria',command=stop)
     from . import diagnostics_ui
     cmds.menuItem(divider=True)
     cmds.menuItem(label="Guardar diagnóstico de rendimiento…", command=diagnostics_ui.save_performance)

@@ -44,20 +44,22 @@ def tick():
             state['phase']=2
         elif state['phase']==2:
             old_process=c.engine.process
+            old_stream=c.scene_stream
+            state['rebuilds']=c.engine.last_response['scene_rebuilds']
             state['settings']=dict(c.engine.config)
             with mock.patch.object(ui,'omui',SimpleNamespace(M3dView=SimpleNamespace(
                     getM3dViewFromModelPanel=mock.Mock(side_effect=RuntimeError('view closed'))))):
                 c.missing_view_since=time.monotonic()-4
                 c.tick()
-            checks['closed_view_releases_worker']=c.suspended and c.engine.process is None and old_process.poll() is not None
-            checks['closed_view_releases_scene_cache']=c.scene_stream is None and not ui.viewport.register().has_image
+            checks['closed_view_parks_worker']=c.parked and c.engine.process is old_process and old_process.poll() is None
+            checks['closed_view_keeps_scene_cache']=c.scene_stream is old_stream
             c.tick()
-            checks['returning_view_restarts_worker']=not c.suspended and c.engine.process is not None and c.engine.process is not old_process
+            checks['returning_view_reuses_worker']=not c.parked and c.engine.process is old_process
             state['phase']=3
         else:
             if ui.viewport.register().gpu_image.displayed_id!=c.engine.received_id:return
-            checks['image_recovers_after_worker_restart']=c.engine.received_id>0 and ui.viewport.register().has_image
-            checks['restart_preserves_user_settings']=c.engine.config==state['settings']
+            checks['image_recovers_without_rebuild']=c.engine.received_id>0 and ui.viewport.register().has_image and c.engine.last_response['scene_rebuilds']==state['rebuilds']
+            checks['resume_preserves_user_settings']=c.engine.config==state['settings']
             timer.stop()
             (root/'diagnostics'/'panel_lifecycle_result.json').write_text(json.dumps({'passed':all(checks.values()),'checks':checks},indent=2))
     except Exception:

@@ -32,7 +32,7 @@ def wait_until(engine, predicate, accept, timeout=120):
 def _changed(playing, *args):
     from . import ui, viewport
     import maya.cmds as cmds
-    if playing and ui._controller is None:
+    if playing and (ui._controller is None or getattr(ui._controller,'parked',False)):
         import maya.api.OpenMayaRender as render
         if render.MRenderer.drawAPI() == render.MRenderer.kDirectX11:
             # The DX renderer entry is an explanatory placeholder, never a

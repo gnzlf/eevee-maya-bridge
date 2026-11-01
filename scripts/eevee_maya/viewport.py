@@ -124,6 +124,7 @@ class GPUImage(render.MUserRenderOperation):
         self.frame = None
         self.key = None
         self.displayed_id = 0
+        self.error = None
 
 
 class ImageQuad(render.MQuadRender):
@@ -341,8 +342,8 @@ class Loading(render.MHUDRender):
         progress, elapsed, error = {'stage':'starting'}, 0, None
         if controller:
             engine = controller.engine
-            progress = engine.startup_progress()
-            elapsed = max(0, time.monotonic() - engine.started)
+            progress = {'stage':'resume'} if controller.resuming else engine.startup_progress()
+            elapsed = max(0, time.monotonic() - (controller.resumed_at if controller.resuming else engine.started))
             error = (controller.startup_error or engine.last_response.get('error')
                      or controller.engine.frame is not None and _override.gpu_image.error)
             if engine.process is not None and engine.process.poll() is not None:
@@ -413,7 +414,7 @@ class Override(render.MRenderOverride):
         if capture.active() and ui._controller is not None and ui._controller.capture_error:
             self.operations = [self.capture_failure, self.present]
             return
-        if not capture.active() and (ui._controller is None or ui._controller.panel != destination):
+        if not capture.active() and (ui._controller is None or ui._controller.panel != destination or ui._controller.parked):
             # Maya's Renderer menu assigns an override directly, without going
             # through our menu command. Start its controller on the next idle.
             self.has_image = False
@@ -424,7 +425,7 @@ class Override(render.MRenderOverride):
                     try:
                         if (_override is self and cmds.modelPanel(destination, exists=True) and
                                 cmds.modelEditor(destination, query=True, rendererOverrideName=True) == NAME and
-                                (ui._controller is None or ui._controller.panel != destination)):
+                                (ui._controller is None or ui._controller.panel != destination or ui._controller.parked)):
                             ui.attach(destination)
                     finally:
                         self.pending_attach = False

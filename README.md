@@ -1,5 +1,7 @@
 # Eevee Maya Bridge
 
+En 0.6.25, cambiar a Viewport 2.0 o a otro panel conserva la sesión Eevee ya iniciada. Al volver se reutilizan el proceso de Blender, la escena, materiales y texturas; se actualizan cámara y cambios pendientes. Durante la pausa no se exportan fotogramas. La sesión conserva RAM/VRAM hasta **Eevee > Detener Eevee y liberar memoria**, descargar el plugin o salir de Maya. El primer arranque sigue siendo cancelable; abrir otra escena, cambiar materiales/topología o la configuración OCIO puede exigir reconstruir datos o reiniciar el worker.
+
 En 0.6.24, **Ajustes > Luz > Intensidad de las luces > Aproximar Viewport 2.0** calibra la respuesta de las luces sin editar sus atributos en Maya. Ajusta No Decay y Linear a una distancia representativa de sus receptores enlazados, distingue las convenciones de materiales clásicos y Standard Surface y corrige la normalización de area. Conserva el brillo volumétrico anterior mediante una compensación independiente. **Conversión anterior de Eevee** recupera el comportamiento previo. La aproximación usa límites de objetos y una mezcla estable de sus familias de materiales: varios receptores a distancias o con materiales distintos pueden conservar diferencias. No cambia HDRI, exposición ni la gestión de color para ocultarlas.
 
 Viewport experimental de **Blender Eevee dentro de un panel de Maya 2024** en Windows de 64 bits. Maya conserva la escena, cámaras, rigs y deformadores; un proceso Blender dibuja las mallas evaluadas y comparte color/profundidad por GPU con el panel.

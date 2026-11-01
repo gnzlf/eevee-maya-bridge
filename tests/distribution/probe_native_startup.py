@@ -1,5 +1,5 @@
 """Use Maya's real Renderer menu, option box, startup drawing and cancellation."""
-import ctypes,hashlib,json,time,traceback
+import ctypes,hashlib,json,os,time,traceback
 from pathlib import Path
 import maya.cmds as cmds
 import maya.mel as mel
@@ -8,6 +8,7 @@ import maya.api.OpenMayaUI as omui
 from PySide2 import QtCore
 from eevee_maya import ui,viewport,settings_window
 root=Path(__file__).resolve().parents[2]
+output=Path(os.environ.get('EEVEE_NATIVE_STARTUP_PROBE',root/'diagnostics'))
 if 'regression_profile' not in cmds.internalVar(userAppDir=True):raise RuntimeError('Dedicated regression Maya required')
 ui.stop();cmds.file(new=True,force=True);cmds.polyCube()
 panel='modelPanel4';cmds.modelPanel(panel,edit=True,camera='persp')
@@ -32,10 +33,12 @@ view=omui.M3dView.getM3dViewFromModelPanel(panel);view.refresh(False,True)
 state={'phase':0,'deadline':time.monotonic()+120,'checks':checks,'phases':[],'hashes':[],'started':time.monotonic()}
 def screenshot(label):
     image=om.MImage();view.readColorBuffer(image,True);w,h=image.getSize();raw=ctypes.string_at(image.pixels(),w*h*4)
-    image.writeToFile(str(root/'diagnostics'/('startup_'+label+'.png')),'png')
+    image.writeToFile(str(output/('startup_'+label+'.png')),'png')
     return hashlib.sha256(raw).hexdigest()
 def finish(error=None):
-    timer.stop();(root/'diagnostics'/'native_startup_result.json').write_text(json.dumps({'passed':not error and all(checks.values()),'checks':checks,'phases':state['phases'],'hashes':state['hashes'],'error':error},indent=2))
+    timer.stop();(output/'native_startup_result.json').write_text(json.dumps({'passed':not error and all(checks.values()),'checks':checks,'phases':state['phases'],'hashes':state['hashes'],'error':error,'pid':os.getpid()},indent=2))
+    if 'EEVEE_NATIVE_STARTUP_PROBE' in os.environ:
+        ui.stop();ui.remove_menu();viewport.deregister();QtCore.QTimer.singleShot(200,lambda:cmds.quit(force=True))
 def tick():
     try:
         if time.monotonic()>state['deadline']:raise TimeoutError(str(getattr(ui._controller,'engine',None)))
@@ -58,7 +61,11 @@ def tick():
             checks['native_default_selection_preserved']=cmds.modelEditor(panel,query=True,rendererOverrideName=True)==''
             cmds.setFocus(panel);mel.eval(commands['eevee']);view.refresh(False,True);state['phase']=2;return
         if state['phase']==3:
-            if c is not None:return
+            if c is not None:
+                if not c.parked:return
+                checks['ready_scene_is_parked_on_native_switch']=c.engine.process is not None and c.engine.process.poll() is None
+                ui.stop()
+                checks['explicit_stop_releases_parked_scene']=ui._controller is None and c.engine.process is None
             state['blender']=ui.runtime_settings()['blender']
             ui.runtime_settings()['blender']=str(root/'diagnostics'/'missing-blender-test.exe')
             cmds.setFocus(panel);mel.eval(commands['eevee']);view.refresh(False,True);state['phase']=4;return
