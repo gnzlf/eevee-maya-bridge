@@ -251,7 +251,56 @@ def environment_texture(node):
     return {'path': path, 'color_space': attr(source, 'colorSpace', 'sRGB')}, None
 
 
-def lights():
+def light_attributes(name, kind):
+    """Every exported light value that does not depend on its world matrix."""
+    if kind == 'aiSkyDomeLight':
+        image, warning = environment_texture(name)
+        # A connected color is replaced by its texture, not multiplied
+        # by Maya's evaluated outColor (which can be black for aiImage).
+        return {'kind': kind,
+                'color': list(attr(name, 'color', (1, 1, 1))) if not image and not warning else [1, 1, 1],
+                'texture': image, 'warning': warning,
+                'intensity': attr(name, 'intensity', 1),
+                'exposure': attr(name, 'exposure', 0),
+                'camera': attr(name, 'camera', 1),
+                'format': attr(name, 'format', 2),
+                'resolution': attr(name, 'resolution', 1000),
+                'diffuse': attr(name, 'aiDiffuse', 1),
+                'specular': attr(name, 'aiSpecular', 1)}
+    return {"kind": kind,
+            "color": list(attr(name, "color", (1, 1, 1))),
+            "intensity": attr(name, "intensity", 1), "exposure": attr(name, "aiExposure", 0),
+            "cone_angle": math.radians(attr(name, "coneAngle", 40)),
+            "penumbra": math.radians(attr(name, "penumbraAngle", 0)),
+            "dropoff": attr(name, "dropoff", 0), "decay": attr(name, "decayRate", 2 if kind == 'aiAreaLight' else 0),
+            "decay_reference": max(.001,attr(name,"centerOfIllumination",5)),
+            "diffuse": attr(name, "aiDiffuse", 1) if kind == 'aiAreaLight' else bool(attr(name, "emitDiffuse", True)),
+            "specular": attr(name, "aiSpecular", 1) if kind == 'aiAreaLight' else bool(attr(name, "emitSpecular", True)),
+            "volume": bool(attr(name, "eeveeVolume", True)), "volume_factor": attr(name, "eeveeVolumeFactor", 1),
+            "shadows": bool(attr(name, "aiCastShadows", True)) if kind == 'aiAreaLight' else bool(attr(name, "useDepthMapShadows", False) or attr(name, "useRayTraceShadows", False)),
+            "ambient_shade": attr(name, "ambientShade", .45),
+            "normalize": bool(attr(name, "normalize", True)),
+            "legacy_intensity": bool(attr(name, "legacyIntensity", False)),
+            "area_shape": attr(name, "aiTranslator", 'quad') or 'quad',
+            "spread": math.pi * attr(name, "aiSpread", 1),
+            "radius": attr(name, "lightRadius", 0),
+            "angle": math.radians(attr(name, "lightAngle", 0))}
+
+
+def light_record(name, matrix, attributes):
+    """Same dictionary layout as before: name, kind, matrix, then attributes."""
+    record = {'name': name, 'kind': attributes['kind'], 'matrix': matrix}
+    record.update(attributes)
+    if attributes['kind'] != 'aiSkyDomeLight':
+        record["size_x"] = 2 * math.sqrt(sum(v*v for v in matrix[:3]))
+        record["size_y"] = 2 * math.sqrt(sum(v*v for v in matrix[4:7]))
+    return record
+
+
+def lights(cache=None):
+    """Visible supported lights. A LightCache skips unchanged attribute reads."""
+    if cache is not None:
+        return cache.lights()
     from . import maya_lights
     result = []
     kinds = maya_lights.types()
@@ -262,42 +311,7 @@ def lights():
             name = path.fullPathName()
             kind = cmds.nodeType(name)
             if kind in kinds:
-                matrix = matrix_values(path.inclusiveMatrix())
-                if kind == 'aiSkyDomeLight':
-                    image, warning = environment_texture(name)
-                    # A connected color is replaced by its texture, not multiplied
-                    # by Maya's evaluated outColor (which can be black for aiImage).
-                    result.append({'name': name, 'kind': kind, 'matrix': matrix,
-                                   'color': list(attr(name, 'color', (1, 1, 1))) if not image and not warning else [1, 1, 1],
-                                   'texture': image, 'warning': warning,
-                                   'intensity': attr(name, 'intensity', 1),
-                                   'exposure': attr(name, 'exposure', 0),
-                                   'camera': attr(name, 'camera', 1),
-                                   'format': attr(name, 'format', 2),
-                                   'resolution': attr(name, 'resolution', 1000),
-                                   'diffuse': attr(name, 'aiDiffuse', 1),
-                                   'specular': attr(name, 'aiSpecular', 1)})
-                    continue
-                result.append({"name": name, "kind": kind, "matrix": matrix,
-                               "color": list(attr(name, "color", (1, 1, 1))),
-                               "intensity": attr(name, "intensity", 1), "exposure": attr(name, "aiExposure", 0),
-                               "cone_angle": math.radians(attr(name, "coneAngle", 40)),
-                               "penumbra": math.radians(attr(name, "penumbraAngle", 0)),
-                               "dropoff": attr(name, "dropoff", 0), "decay": attr(name, "decayRate", 2 if kind == 'aiAreaLight' else 0),
-                               "decay_reference": max(.001,attr(name,"centerOfIllumination",5)),
-                               "diffuse": attr(name, "aiDiffuse", 1) if kind == 'aiAreaLight' else bool(attr(name, "emitDiffuse", True)),
-                               "specular": attr(name, "aiSpecular", 1) if kind == 'aiAreaLight' else bool(attr(name, "emitSpecular", True)),
-                               "volume": bool(attr(name, "eeveeVolume", True)), "volume_factor": attr(name, "eeveeVolumeFactor", 1),
-                               "shadows": bool(attr(name, "aiCastShadows", True)) if kind == 'aiAreaLight' else bool(attr(name, "useDepthMapShadows", False) or attr(name, "useRayTraceShadows", False)),
-                               "ambient_shade": attr(name, "ambientShade", .45),
-                               "normalize": bool(attr(name, "normalize", True)),
-                               "legacy_intensity": bool(attr(name, "legacyIntensity", False)),
-                               "area_shape": attr(name, "aiTranslator", 'quad') or 'quad',
-                               "spread": math.pi * attr(name, "aiSpread", 1),
-                               "radius": attr(name, "lightRadius", 0),
-                               "angle": math.radians(attr(name, "lightAngle", 0)),
-                               "size_x": 2 * math.sqrt(sum(v*v for v in matrix[:3])),
-                               "size_y": 2 * math.sqrt(sum(v*v for v in matrix[4:7]))})
+                result.append(light_record(name, matrix_values(path.inclusiveMatrix()), light_attributes(name, kind)))
     return result
 
 

@@ -2,6 +2,7 @@
 import bpy
 import numpy as np
 import math
+import time
 from mathutils import Matrix
 
 import worker
@@ -10,6 +11,11 @@ from eevee_maya.lighting import same_light_links, set_light_visibility
 from environment import sync_environment
 from eevee_maya.light_range import influence_distance
 from eevee_maya import light_photometry
+
+
+# Seconds between receiver-bound light calibrations during interaction and
+# playback. Settled frames (and playblast captures) always use exact bounds.
+LIGHT_REFRESH = 0.25
 
 
 class SceneMirror:
@@ -31,6 +37,11 @@ class SceneMirror:
         self.environment_state = {}
         self.geometry_revision = 0
         self.light_bounds = None
+        # Geometry revision last used to calibrate local lights. While a rig is
+        # animated or dragged it advances at most every LIGHT_REFRESH seconds:
+        # receiver bounds of every mesh were recomputed for every pose before.
+        self.light_revision = None
+        self.light_revision_at = 0.0
 
     def sync_light_links(self,obj,spec):
         meshes={name:mesh for name,mesh in self.objects.items() if mesh.type=='MESH'}
@@ -137,9 +148,15 @@ class SceneMirror:
         native = request["native"]
         calibrated=any(s.get('intensity_mode')=='viewport2' for s in request['lights'])
         local=any(s['kind'] in ('pointLight','spotLight') for s in request['lights']) or calibrated
+        now = time.monotonic()
+        if (self.light_revision is None or not request.get('interactive')
+                or now - self.light_revision_at >= LIGHT_REFRESH):
+            if self.light_revision != self.geometry_revision:
+                self.light_revision_at = now
+            self.light_revision = self.geometry_revision
         signature = (request["lights"], native["displayLights"], native.get("selected_lights", []),native["shadows"],native.get('useDefaultMaterial') if calibrated else None,
                      request.get('hdri_resolution',0),
-                     self.geometry_revision if local else None,request.get('effects',{}).get('fog'),request.get('effects',{}).get('fog_distance'),
+                     self.light_revision if local else None,request.get('effects',{}).get('fog'),request.get('effects',{}).get('fog_distance'),
                      request.get('camera',{}).get('matrix') if local and request.get('effects',{}).get('fog') else None)
         if signature == self.light_signature:
             return

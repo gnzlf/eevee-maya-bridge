@@ -161,6 +161,56 @@ def render_depth(width, height, view, projection, gpu_transport=False):
         gpu.state.depth_mask_set(False)
     return depth
 
+def scene_lights_details():
+    return [{"name":o.get("maya_path",o.name),"type":o.data.type,"energy":o.data.energy,
+             "diffuse":o.data.diffuse_factor,"specular":o.data.specular_factor,
+             "normalize":getattr(o.data,"normalize",None),"cutoff_distance":getattr(o.data,"cutoff_distance",None),
+             "custom_distance":getattr(o.data,'use_custom_distance',False),
+             "size_x":getattr(o.data,"size",None),"size_y":getattr(o.data,"size_y",None),
+             "shadows":o.data.use_shadow,
+             "shadow_angle":getattr(o.data,"angle",None),
+             "shadow_radius":getattr(o.data,"shadow_soft_size",None),
+             "position":list(o.matrix_world.translation),"color":list(o.data.color),
+             "volume":o.data.volume_factor,"spot_size":getattr(o.data,"spot_size",None),
+             "receivers":o.light_linking.receiver_collection.name if o.light_linking.receiver_collection else None,
+             "shadow_blockers":o.light_linking.blocker_collection.name if o.light_linking.blocker_collection else None,
+             "spot_blend":getattr(o.data,"spot_blend",None)}
+            for o in bpy.context.scene.objects if o.type=="LIGHT" and not o.hide_viewport]
+
+
+def eevee_state(scene, cam, native, gpu_transport, shadow_state, color_state):
+    """Diagnostic snapshot. Walking every object/material per pose cost several
+    milliseconds in production scenes, so the expensive lists are refreshed at
+    most every 0.5 s (always on scene rebuilds and when debugging)."""
+    now = time.monotonic()
+    cached = state.get('diagnostic_lists')
+    # Light edits replace mirror.light_specs, so light diagnostics stay exact.
+    key = (mirror.rebuilds, id(mirror.light_specs))
+    if (cached is None or cached[0] != key or cached[4] is not mirror.light_specs
+            or now - cached[1] >= .5 or os.environ.get("EEVEE_RENDER_DEBUG") == "1"):
+        details = scene_lights_details()
+        cached = (key, now, details,
+                  [m.name for m in bpy.data.materials if m.get('eevee_transmission_preview')],
+                  mirror.light_specs)
+        state['diagnostic_lists'] = cached
+    _, _, details, transmission, _ = cached
+    return {"samples":scene.eevee.taa_samples,"shadows":scene.eevee.use_shadows,
+                                   "shadow_quality":shadow_state,
+                                   "transmission_preview_materials":transmission,
+                                   "color_management":color_state,
+                                   "source_dof":cam.data.dof.use_dof,"dof_backend":"shared_depth_preview",
+                                   "temporal_reprojection":scene.eevee.use_taa_reprojection,
+                                   "ao":bool(native and native["ao"]),
+                                   "ao_backend":"shared_depth_gpu" if gpu_transport else "eevee_fast_gi",
+                                   "reflection_trace_roughness":scene.eevee.ray_tracing_options.trace_max_roughness,
+                                   "background_camera_only":bool(scene.world.node_tree.nodes.get("EeveeBackgroundOnly")),
+                                   "environment":mirror.environment_state,
+                                   "environment_strength":scene.world.node_tree.nodes["EeveeAmbientLighting"].inputs[1].default_value if scene.world.node_tree.nodes.get("EeveeAmbientLighting") else None,
+                                   "volume_range":[scene.eevee.volumetric_start,scene.eevee.volumetric_end],
+                                   "volume_density":bpy.data.objects['EeveeAtmosphereVolume'].data.materials[0].node_tree.nodes['EeveeAtmosphere'].inputs['Density'].default_value,
+                                   "lights":len(details),
+                                   "light_details":details}
+
 
 def tick():
     try:
@@ -329,35 +379,7 @@ def tick():
                                     "near":cam.data.clip_start,"far":cam.data.clip_end,
                                     "view_near":state["space"].clip_start,"view_far":state["space"].clip_end},
                    "native": request.get("native"),
-                   "eevee_state": {"samples":scene.eevee.taa_samples,"shadows":scene.eevee.use_shadows,
-                                   "shadow_quality":shadow_state,
-                                   "transmission_preview_materials":[m.name for m in bpy.data.materials if m.get('eevee_transmission_preview')],
-                                   "color_management":color_state,
-                                   "source_dof":cam.data.dof.use_dof,"dof_backend":"shared_depth_preview",
-                                   "temporal_reprojection":scene.eevee.use_taa_reprojection,
-                                   "ao":bool(native and native["ao"]),
-                                   "ao_backend":"shared_depth_gpu" if gpu_transport else "eevee_fast_gi",
-                                   "reflection_trace_roughness":scene.eevee.ray_tracing_options.trace_max_roughness,
-                                   "background_camera_only":bool(scene.world.node_tree.nodes.get("EeveeBackgroundOnly")),
-                                   "environment":mirror.environment_state,
-                                   "environment_strength":scene.world.node_tree.nodes["EeveeAmbientLighting"].inputs[1].default_value if scene.world.node_tree.nodes.get("EeveeAmbientLighting") else None,
-                                   "volume_range":[scene.eevee.volumetric_start,scene.eevee.volumetric_end],
-                                   "volume_density":bpy.data.objects['EeveeAtmosphereVolume'].data.materials[0].node_tree.nodes['EeveeAtmosphere'].inputs['Density'].default_value,
-                                   "lights":len([o for o in bpy.context.scene.objects if o.type=="LIGHT" and not o.hide_viewport]),
-                                   "light_details":[{"name":o.get("maya_path",o.name),"type":o.data.type,"energy":o.data.energy,
-                                                     "diffuse":o.data.diffuse_factor,"specular":o.data.specular_factor,
-                                                     "normalize":getattr(o.data,"normalize",None),"cutoff_distance":getattr(o.data,"cutoff_distance",None),
-                                                     "custom_distance":getattr(o.data,'use_custom_distance',False),
-                                                     "size_x":getattr(o.data,"size",None),"size_y":getattr(o.data,"size_y",None),
-                                                     "shadows":o.data.use_shadow,
-                                                     "shadow_angle":getattr(o.data,"angle",None),
-                                                     "shadow_radius":getattr(o.data,"shadow_soft_size",None),
-                                                     "position":list(o.matrix_world.translation),"color":list(o.data.color),
-                                                     "volume":o.data.volume_factor,"spot_size":getattr(o.data,"spot_size",None),
-                                                     "receivers":o.light_linking.receiver_collection.name if o.light_linking.receiver_collection else None,
-                                                     "shadow_blockers":o.light_linking.blocker_collection.name if o.light_linking.blocker_collection else None,
-                                                     "spot_blend":getattr(o.data,"spot_blend",None)}
-                                                    for o in bpy.context.scene.objects if o.type=="LIGHT" and not o.hide_viewport]},
+                   "eevee_state": eevee_state(scene, cam, native, gpu_transport, shadow_state, color_state),
                    "maya_frame": request.get("maya_frame"),
                    "timings_ms": {"sync": (sync_finished-started)*1000,
                                   "mirror": (mirror_finished-started)*1000,

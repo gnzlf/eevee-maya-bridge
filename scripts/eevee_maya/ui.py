@@ -21,6 +21,7 @@ from .protocol import write_json
 from .changes import SceneChanges
 from .scene_stream import SceneStream
 from .light_links import LightLinks
+from .light_cache import LightCache
 from .quality import InteractionQuality
 from .mesh_packet import records
 
@@ -43,6 +44,9 @@ def runtime_settings():
         if cmds.optionVar(exists='eeveeInteractionWidth'):
             width=int(cmds.optionVar(query='eeveeInteractionWidth'))
             if width in (640,960,1280,1920):_runtime_config['interaction_width']=width
+        if cmds.optionVar(exists='eeveeInteractionSamples'):
+            samples=int(cmds.optionVar(query='eeveeInteractionSamples'))
+            if samples in (0,1,2,4):_runtime_config['interaction_samples']=samples
         if cmds.optionVar(exists='eeveeLightIntensityMode'):
             mode=cmds.optionVar(query='eeveeLightIntensityMode')
             if mode in light_photometry.MODES:_runtime_config['light_intensity_mode']=mode
@@ -87,7 +91,15 @@ class Controller:
         self.quality = InteractionQuality()
         self.changes = SceneChanges()
         self.light_links = LightLinks()
+        self.light_cache = LightCache()
         self.mesh_names = []
+        # Main-thread budget: Maya needs it for manipulators and rig evaluation.
+        self.validated_at = 0
+        self.last_snapshot_at = 0
+        self.draw_requested = True
+        self.submitted_camera = None
+        self.color_read_at = 0
+        self.cached_color_management = None
         self.last_diagnostics = 0
         self.last_quality = None
         self.in_tick = False
@@ -141,6 +153,9 @@ class Controller:
     def tick(self, *args, refresh=True):
         if self.in_tick or self.capture_syncing or capture.active():
             return
+        if self.idle_while_rendering():
+            return
+        self.validated_at = time.monotonic()
         if self.presented_once or (self.engine.gpu and self.engine.received_id and viewport.register().gpu_image.displayed_id):
             self.warm_ready=True
         if not cmds.modelPanel(self.panel, exists=True):
@@ -228,6 +243,11 @@ class Controller:
             # second just to read the same controls. Always poll the IPC first.
             if not received and not self.engine.available:
                 return
+            if not received and not self.snapshot_needed():
+                # Idle: nothing reported a change. Check again shortly instead
+                # of re-reading every control and light at the timer rate.
+                self.timer.setInterval(16)
+                return
             state = native_controls.read(self.panel)
             self.engine.playing = self.changes.playing
             override = viewport.register()
@@ -282,6 +302,9 @@ class Controller:
                 self.timer.setInterval(int(self.engine.config['interval_ms']) if submitted else 16)
                 self.timings["submit_ms"] = (time.perf_counter() - submit_started) * 1000
                 self.force = False
+                self.draw_requested = False
+                self.last_snapshot_at = time.monotonic()
+                self.submitted_camera = self.camera_key()
             self.timings["tick_ms"] = (time.perf_counter() - tick_started) * 1000
             if self.status_label and cmds.control(self.status_label, exists=True):
                 cmds.text(self.status_label, edit=True, label=self.engine.status)
@@ -301,8 +324,51 @@ class Controller:
         finally:
             self.in_tick = False
 
+    def idle_while_rendering(self):
+        """Cheap early exit while Blender renders: no Maya commands at ~1 kHz.
+
+        Panel/renderer validity is still checked at least every 250 ms, and any
+        pending response or state transition takes the complete path.
+        """
+        engine = self.engine
+        if (self.force or self.parked or self.waiting_for_view or not self.presented_once
+                or engine.process is None or self.startup_error):
+            return False
+        if time.monotonic() - self.validated_at >= .25:
+            return False
+        mailbox = engine.response_mailbox
+        if mailbox is None or mailbox.latest_id > engine.received_id:
+            return False
+        return not engine.available
+
+    def camera_key(self):
+        frame = getattr(self, 'viewport_camera', None)
+        return (frame['path'], tuple(frame['view']), tuple(frame['projection']), tuple(frame['size'])) if frame else None
+
+    def snapshot_needed(self):
+        """Export only when Maya reported a change, instead of ~60 times/s idle."""
+        changes = self.changes
+        if (self.force or self.draw_requested or changes.dirty or changes.structural
+                or changes.material_dirty or changes.reconnect or changes.playing or not self.engine.sent_id):
+            return True
+        if self.camera_key() != self.submitted_camera:
+            return True
+        if self.quality.settle_due(self.engine.config):
+            return True
+        idle = max(.02, float(self.engine.config.get('idle_poll_ms', 100)) / 1000.0)
+        return time.monotonic() - self.last_snapshot_at >= idle
+
+    def color_settings(self):
+        # Color preferences only change from Maya's preferences UI; reading
+        # eight colorManagementPrefs queries per pose is unnecessary.
+        now = time.monotonic()
+        if self.cached_color_management is None or now - self.color_read_at >= .5:
+            self.cached_color_management = exporter.color_management()
+            self.color_read_at = now
+        return self.cached_color_management
+
     def snapshot(self, camera, width, height, state):
-        color_management = exporter.color_management()
+        color_management = exporter.color_management() if capture.active() else self.color_settings()
         if color_management != self.color_management:
             initial=getattr(self.engine,'color_settings',None)
             keys=('rendering_space','config_path','config_signature','native_ocio')
@@ -342,7 +408,7 @@ class Controller:
                     self.changes.structural = True
                     return self.snapshot(camera, width, height, state)
         self.changes.dirty = False
-        data['lights'] = exporter.lights()
+        data['lights'] = exporter.lights(self.light_cache)
         links = self.light_links.read(self.mesh_names, [light['name'] for light in data['lights']])
         for light in data['lights']:
             light.update(links[light['name']])
@@ -433,6 +499,7 @@ class Controller:
         timeout = float(self.engine.config.get('capture_timeout', 120))
         capture.wait_until(self.engine, lambda: self.engine.available, self.accept_capture_response, timeout)
         self.changes.dirty = True
+        self.light_cache.invalidate()
         state = native_controls.read(self.panel)
         data = self.snapshot(camera, width, height, state)
         frame_camera = getattr(self, 'viewport_camera', None)
@@ -459,6 +526,7 @@ class Controller:
                 except RuntimeError:pass  # The view may already be destroyed.
             self.changes.close()
             self.light_links.close()
+            self.light_cache.close()
             if self.scene_stream:
                 self.scene_stream.close()
                 self.scene_stream = None
@@ -495,7 +563,8 @@ class Controller:
         self.parked=False;self.waiting_for_view=False;self.missing_view_since=None
         self.presented_once=False;self.resuming=self.warm_ready;self.resumed_at=time.monotonic()
         self.capture_key=None;self.viewport_camera=None
-        self.changes.dirty=True;self.force=True
+        self.changes.dirty=True;self.force=True;self.draw_requested=True
+        self.light_cache.invalidate()
         self.timer.start(int(self.engine.config['interval_ms']));self.loading_timer.start(50)
 
     def bind_panel(self,panel,status=None):

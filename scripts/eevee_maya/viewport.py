@@ -33,6 +33,10 @@ class CameraSync(render.MUserRenderOperation):
                  'view': list(context.getMatrix(render.MFrameContext.kViewMtx)),
                  'size': list(context.getViewportDimensions()[2:])}
         controller.viewport_camera = frame
+        if not controller.in_tick:
+            # A draw we did not request (manipulator, channel box, timeline,
+            # toolbar): Maya changed something, so export on the next tick.
+            controller.draw_requested = True
         if capture.active():
             controller.before_draw(frame)
         else:

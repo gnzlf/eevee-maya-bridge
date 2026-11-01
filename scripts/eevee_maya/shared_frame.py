@@ -125,6 +125,11 @@ class SharedMailbox:
         return pickle.loads(payload)
 
     @property
+    def latest_id(self):
+        """Unlocked hint of the newest token; read() remains authoritative."""
+        return struct.unpack_from("<Q", self.memory, 0)[0]
+
+    @property
     def consumed_id(self):
         return struct.unpack_from("<Q", self.memory, 16)[0]
 

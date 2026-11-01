@@ -6,6 +6,8 @@ En 0.6.24, **Ajustes > Luz > Intensidad de las luces > Aproximar Viewport 2.0** 
 
 Viewport experimental de **Blender Eevee dentro de un panel de Maya 2024** en Windows de 64 bits. Maya conserva la escena, cámaras, rigs y deformadores; un proceso Blender dibuja las mallas evaluadas y comparte color/profundidad por GPU con el panel.
 
+Para conocer el flujo interno, la arquitectura, los componentes principales y sus límites actuales, consulta [Cómo funciona Eevee Maya Bridge](COMO_FUNCIONA_EL_PLUGIN.md).
+
 ## Instalar en otra máquina
 
 **0.6.23 — respuesta al editar:** mover objetos, deformar o cambiar visibilidad activa correctamente la calidad interactiva. **Ajustes > Viewport > Ancho temporal al mover objetos o luces** permite elegir 640/960/1280/1920; al detenerse vuelve al ancho final y el playblast conserva sus dimensiones. El motor reutiliza buffers de hasta tres tamaños y evita reconfigurar una cámara o ajustes de Eevee que no cambiaron. Conserva AA, efectos y materiales. La caché consume memoria adicional para reducir las pausas al alternar resolución; no garantiza 30 FPS.

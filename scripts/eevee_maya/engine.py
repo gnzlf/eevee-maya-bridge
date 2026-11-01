@@ -20,6 +20,7 @@ def settings():
                 "max_width": 640, "samples": 1, "interval_ms": 1, "studio": False,
                 "backend": "viewport", "adaptive_quality": True, "interaction_width": 960,
                 "fast_navigation": True, "navigation_width": 640,
+                "interaction_samples": 1, "settle_seconds": 0.3, "idle_poll_ms": 100,
                 "shadow_quality": "high", "shadow_pool_size": "auto", "light_intensity_mode":"viewport2"}
     path = ROOT / "config.json"
     if path.exists():

@@ -44,7 +44,7 @@ class AdaptiveQuality(unittest.TestCase):
     def test_edits_use_preview_then_idle_restores_full_quality(self):
         quality=InteractionQuality();config={'adaptive_quality':True}
         preview=quality.apply(self.data(),config,now=0)
-        self.assertEqual((preview['width'],preview['height'],preview['samples']),(960,540,16))
+        self.assertEqual((preview['width'],preview['height'],preview['samples']),(960,540,1))
         full=quality.apply(self.data(),config,now=.5)
         self.assertEqual((full['width'],full['height'],full['samples']),(1920,1080,16))
         changed=self.data();changed['lights'][0]['intensity']=2
@@ -59,20 +59,27 @@ class AdaptiveQuality(unittest.TestCase):
         self.assertFalse(quality.apply(settled,{},now=1)['interactive'])
         scrub=self.data();scrub['maya_frame']=2
         self.assertTrue(quality.apply(scrub,{},now=1.01)['interactive'])
-    def test_playback_keeps_native_samples_including_aa_off(self):
+    def test_playback_uses_one_sample_by_default(self):
         for samples in (1,2,8,16,32,64):
             snapshot=self.data();snapshot['samples']=samples
-            self.assertEqual(InteractionQuality().apply(snapshot,{},playing=True,now=0)['samples'],samples)
-    def test_camera_navigation_restores_resolution_and_preserves_aa(self):
+            self.assertEqual(InteractionQuality().apply(snapshot,{},playing=True,now=0)['samples'],1)
+    def test_interaction_samples_limit_and_native_option(self):
+        for limit,expected in ((0,16),(2,2),(4,4),(8,8),('bad',1),(3,1)):
+            snapshot=self.data()
+            got=InteractionQuality().apply(snapshot,{'interaction_samples':limit},playing=True,now=0)['samples']
+            self.assertEqual(got,expected,limit)
+        snapshot=self.data();snapshot['samples']=2
+        self.assertEqual(InteractionQuality().apply(snapshot,{'interaction_samples':4},playing=True,now=0)['samples'],2)
+    def test_camera_navigation_previews_then_restores_resolution_and_aa(self):
         quality=InteractionQuality();a=self.data();a['camera']['matrix']=[0]
         quality.apply(a,{},now=0)
         b=self.data();b['camera']['matrix']=[1]
         moved=quality.apply(b,{},now=1)
-        self.assertEqual((moved['width'],moved['height'],moved['samples']),(640,360,16))
+        self.assertEqual((moved['width'],moved['height'],moved['samples']),(640,360,1))
         self.assertTrue(moved['navigating'])
         c=self.data();c['camera']['matrix']=[1]
         idle=quality.apply(c,{},now=1.5)
-        self.assertEqual((idle['width'],idle['height']),(1920,1080))
+        self.assertEqual((idle['width'],idle['height'],idle['samples']),(1920,1080,16))
         self.assertFalse(idle['navigating'])
     def test_animated_camera_does_not_trigger_fast_navigation(self):
         quality=InteractionQuality();a=self.data();a['camera']['matrix']=[0]

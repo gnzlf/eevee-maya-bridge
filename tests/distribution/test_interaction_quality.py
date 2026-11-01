@@ -13,7 +13,7 @@ class GeometryInteraction(unittest.TestCase):
   idle=quality.apply(self.snapshot(),config,now=1);self.assertEqual(idle['width'],1920)
   for now in (2,2.6,3.2):
    frame=quality.apply(self.snapshot(True),config,now=now)
-   self.assertEqual((frame['width'],frame['height'],frame['samples']),(960,540,8))
+   self.assertEqual((frame['width'],frame['height'],frame['samples']),(960,540,1))
    self.assertFalse(frame['navigating'])
   idle=quality.apply(self.snapshot(),config,now=4)
   self.assertEqual((idle['width'],idle['height']),(1920,1080));self.assertFalse(idle['interactive'])

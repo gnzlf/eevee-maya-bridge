@@ -4,6 +4,21 @@
 
 Este informe describe el estado del código y las verificaciones disponibles. Distingue funciones implementadas, compatibilidad parcial y propuestas pendientes. Las metas de rendimiento son objetivos de desarrollo, no resultados ya alcanzados.
 
+### Optimización de interacción — 1 de noviembre de 2026
+
+**Validación en Maya 2024** (`SQ01-SH01_3D Layout_v0004.mb`, perfil propio, panel 1280 × 720, `tests/distribution/probe_interaction_optimization_gui.py`; resultados en `diagnostics/interaction-opt-20261101-192658/` y `diagnostics/interaction_optimization_vs_controlled.json`). Con la misma entrada que `camera_navigation_controlled.json` (translateX cada 16 ms), la navegación pasó de 13,2 a 36,5 imágenes nuevas por segundo; la latencia mediana bajó de 88 a 27 ms y la p95, de 110 a 49 ms. El color del worker bajó de 60,9 a 11,1 ms con 1 muestra frente a 8. La órbita dio 48 FPS y 22 ms, y mover una luz, 41 FPS y 21 ms. En reposo no hubo envíos durante 2 s, y tras cada fase se recuperaron 1920 px y 8 muestras. La referencia es 0.6.8 y viene de otra sesión. La reproducción del rig sigue limitada por Maya: sin Eevee, Viewport 2.0 reproduce a 5,0 fps (163 ms por fotograma); con Eevee, a 4,3 fps, y la imagen va unos 360 ms por detrás. No se registraron `maya_error.txt` ni errores en `blender.log`.
+
+Objetivo: que navegar, mover luces y animar rigs se sienta como un viewport nativo. Cambios, sin alterar la calidad final ni el playblast:
+
+- **Muestras AA al moverse.** Mientras se navega, edita o reproduce, Eevee renderiza 1 muestra (sin jitter, como el viewport de Blender) y al soltar vuelve a las Muestras AA de Maya. Antes cada pose renderizaba todas las muestras (≈60–67 ms con 8). Configurable en Ajustes > Rendimiento > *Muestras AA al moverse* (1, 2, 4 o igual que Maya); se guarda en la optionVar `eeveeInteractionSamples`. La espera para recuperar calidad baja de 0,4 a 0,3 s (`settle_seconds`).
+- **Snapshots solo cuando algo cambia.** En reposo el controlador exportaba la escena completa ~60 veces por segundo. Ahora exporta al recibir un fotograma, cuando Maya marca cambios del DG, cuando la cámara cambia, cuando Maya redibuja el panel por una acción del usuario, al recuperar calidad o, como red de seguridad, cada 100 ms (`idle_poll_ms`). Mientras Blender renderiza, el temporizador de 1 ms ya no consulta paneles ni controles (se validan cada 250 ms).
+- **Caché de luces en Maya (`light_cache.py`).** Las matrices y la visibilidad se leen en cada pose; los ~50 atributos por luz solo se releen cuando esa luz se marca dirty, al cambiar de tiempo, en Undo/Redo, en cambios de estructura o tras 1 s. El resultado es idéntico al exportador anterior.
+- **Color management** se consulta como máximo cada 0,5 s (siempre exacto durante la captura).
+- **Calibración de luces durante animación.** Con *Aproximar Viewport 2.0* cada pose de un rig recalculaba los límites de todas las mallas y re-aplicaba todas las luces. Durante la interacción se recalibra como máximo cada 0,25 s; los fotogramas en reposo y el playblast usan límites exactos.
+- **Diagnósticos del worker** (lista de luces y materiales) se reconstruyen cada 0,5 s o cuando cambian las luces, no en cada fotograma.
+
+Contrapartida: durante el movimiento la imagen tiene menos antialiasing y sombras suaves menos convergidas, igual que en Blender. Para medir: Eevee > Guardar diagnóstico de rendimiento, antes y después, en la misma escena y encuadre.
+
 ### Primera etapa aplicada: cambios de bajo impacto — 27 de octubre de 2026
 
 La versión 0.6.12 añade diagnóstico manual de rendimiento y revisión de materiales en modo lectura desde el menú Eevee. El informe utiliza solicitudes y dibujos identificados, muestra resolución efectiva, separa captura de interacción y evita contar redibujos como imágenes nuevas. La revisión detecta conexiones sin traducción y archivos que el exportador no puede leer. Sus informes exportados omiten nombres de materiales y rutas de texturas.
