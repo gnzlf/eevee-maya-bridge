@@ -4,6 +4,28 @@
 
 Este informe describe el estado del código y las verificaciones disponibles. Distingue funciones implementadas, compatibilidad parcial y propuestas pendientes. Las metas de rendimiento son objetivos de desarrollo, no resultados ya alcanzados.
 
+### Profundidad de campo con rim light — 2 de noviembre de 2026
+
+**Antes.** La vista previa de DOF hacía 48 muestras fijas en espiral por píxel, sin tener en cuenta la profundidad. Las muestras fuera del cuadro repetían el borde de la imagen. Un rim light (borde fino y HDR muy brillante) quedaba como copias sueltas en arcos y rayas verticales: "se corta en trazos". En la prueba, la imagen desenfocada tenía 3 veces más energía de alta frecuencia que la nítida.
+
+**Ahora.** El DOF reúne muestras teniendo en cuenta la profundidad (*scatter-as-gather*), en `native/gpu_bridge.cpp` y con el mismo algoritmo en `shaders/EeveeBlit.ogsfx`:
+- **Alcance de cada muestra:** solo cuenta donde su propio disco de desenfoque llega al píxel. Una muestra que no llega cuenta como el color del propio píxel, así que la cobertura sigue siendo proporcional.
+- **Fondo y frente:** el fondo no se derrama sobre lo enfocado. Lo cercano y desenfocado sí se extiende, gracias a una búsqueda de vecinos en anillos geométricos.
+- **Muestreo:** el número de muestras crece con el radio, hasta 128, y cada píxel rota el patrón. El resto de submuestreo queda como grano fino en lugar de trazos.
+- **Brillos y bordes:** un peso por luminancia evita copias sueltas de los brillos HDR. Las muestras fuera del cuadro ya no repiten el borde.
+
+**Medición.** Prueba `probe_dof_rim_gui.py`: esfera con un rim spot fuerte, 85 mm f/1.4, escena a escala real en cm. Pasa 6/6. Con el foco detrás, la energía es 1.40 frente a 2.31 de la imagen nítida y el pico del rim baja de 255 a 95. Enfocada conserva el pico (252).
+
+**Coste.** Con desenfoque máximo, un redibujado de 960×540 pasa de unos 3 a unos 10–12 ms. La resolución adaptativa lo reduce al navegar.
+
+**Pendiente.** Queda un escalón leve en la silueta cuando el fondo está más desenfocado que el objeto. En modo memoria compartida, el playblast captura un fotograma de retraso; esto ya pasaba antes de este cambio.
+
+### Volumétricas con HDRI y texto de carga — 1 de noviembre de 2026
+
+**Niebla con HDRI.** La niebla sí se calculaba con el HDRI encendido, pero Eevee la iluminaba con el mundo desde todas direcciones. Resultado: una bruma gris plana donde el haz no se distinguía (haz 118 frente a 90 a su lado, sobre 255). Arnold no ilumina `atmosphere_volume` con el skydome, así que ahora la atmósfera ignora el HDRI por defecto: `clamp_volume_indirect = 1e-6`, solo mientras la atmósfera está activa. El HDRI sigue iluminando superficies y fondo. Medido en Maya: haz 58 frente a 1. La opción **HDRI ilumina la niebla** (Entorno, en Atmósfera) recupera el comportamiento anterior. Prueba: `probe_volume_hdri_gui.py`, 7/7.
+
+**Texto de carga.** Las líneas dinámicas del HUD se dibujaban encima unas de otras ("Iniciando motor1 s transcurridos"). Además, la fuente de Maya no dibuja tildes ni "·". El HUD ahora usa texto estático en ASCII ("Preparando geometria: 3 de 9").
+
 ### Reflejos Blinn y ventana de ajustes — 1 de noviembre de 2026
 
 **Blinn como Viewport 2.0.** Bajo una SkyDome blanca uniforme, Viewport 2.0 refleja el entorno en Blinn con `specularColor × specularRollOff`, igual en todos los ángulos (0,35 con los valores por defecto). La traducción anterior lo convertía en un dieléctrico de ~2 %. Ahora el Blinn usa Principled sin especular más un lóbulo Glossy sin Fresnel de ese color, con rugosidad `sqrt(eccentricity)`. En `Chip_Rigging_master:chips_geo` el brillo medido en un chip pasó de 66 a 104 (Viewport 2.0: 120). `standardSurface` no cambia: Viewport 2.0 también lo trata como físico (IOR 1.5 → 4 %, IOR 2.1 → 12,5 %), igual que Eevee.

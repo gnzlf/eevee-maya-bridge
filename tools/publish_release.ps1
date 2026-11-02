@@ -9,7 +9,11 @@ if ([regex]::Match($source,'__version__\s*=\s*"([0-9.]+)"').Groups[1].Value -ne 
 if (git -C $rootPath status --porcelain) { throw 'Hay cambios sin confirmar. Confirma y revisa el código antes de publicar.' }
 & $Python (Join-Path $PSScriptRoot 'build_release.py')
 if ($LASTEXITCODE -ne 0) { throw 'Falló el empaquetado.' }
-git -c 'credential.helper=!gh auth git-credential' -C $rootPath push origin main
+# Windows PowerShell 5.1 turns git's normal progress on stderr into a terminating
+# error under 'Stop'; judge the push by its exit code instead.
+$ErrorActionPreference = 'Continue'
+git -c 'credential.helper=!gh auth git-credential' -C $rootPath push origin main 2>&1 | Write-Host
+$ErrorActionPreference = 'Stop'
 if ($LASTEXITCODE -ne 0) { throw 'Falló el push; no se publicó el release.' }
 $tagName = 'v' + $Version
 $assetPrefix = Join-Path $rootPath ('dist\EeveeMayaBridge-' + $Version + '-maya2024-win64')

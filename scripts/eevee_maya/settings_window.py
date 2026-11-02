@@ -149,7 +149,8 @@ class SettingsWindow:
         node = ui.scene_settings(select=False)
         for attr, label in (("volumetrics", "Atmósfera volumétrica"), ("density", "Densidad"),
                             ('fogAutoRange','Alcance automático'), ("fogDistance","Alcance (cm)"),
-                            ("fogColor", "Color"), ("anisotropy", "Anisotropía")):
+                            ("fogColor", "Color"), ("anisotropy", "Anisotropía"),
+                            ("fogWorldLight", "HDRI ilumina la niebla")):
             self.attribute(node+"."+attr, label)
         _end_more()
         cmds.setParent(tabs)

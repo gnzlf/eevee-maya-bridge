@@ -671,7 +671,7 @@ def scene_settings(*args, select=True):
     for name, kind, value, minimum, maximum in (
             ("volumetrics", "bool", 0, 0, 1), ("density", "double", 0.015, 0, 10),
             ("fogDistance", "double", 100, 1, 1000000),
-            ("fogAutoRange", "bool", 1, 0, 1),
+            ("fogAutoRange", "bool", 1, 0, 1), ("fogWorldLight", "bool", 0, 0, 1),
             ("anisotropy", "double", 0.3, -0.99, 0.99), ("bloom", "bool", 0, 0, 1),
             ("bloomThreshold", "double", 0.8, 0, 100), ("bloomStrength", "double", 0.5, 0, 10)):
         if not cmds.attributeQuery(name, node=node, exists=True):

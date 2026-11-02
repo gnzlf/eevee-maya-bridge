@@ -206,6 +206,7 @@ def eevee_state(scene, cam, native, gpu_transport, shadow_state, color_state):
                                    "background_camera_only":bool(scene.world.node_tree.nodes.get("EeveeBackgroundOnly")),
                                    "environment":mirror.environment_state,
                                    "environment_strength":scene.world.node_tree.nodes["EeveeAmbientLighting"].inputs[1].default_value if scene.world.node_tree.nodes.get("EeveeAmbientLighting") else None,
+                                   "volume_indirect_clamp":scene.eevee.clamp_volume_indirect,
                                    "volume_range":[scene.eevee.volumetric_start,scene.eevee.volumetric_end],
                                    "volume_density":bpy.data.objects['EeveeAtmosphereVolume'].data.materials[0].node_tree.nodes['EeveeAtmosphere'].inputs['Density'].default_value,
                                    "lights":len(details),

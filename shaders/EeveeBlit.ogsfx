@@ -34,28 +34,61 @@ GLSLShader BridgeVertex {
     }
 }
 GLSLShader BridgePixel {
+    // Same scatter-as-gather preview as the GPU bridge (native/gpu_bridge.cpp).
+    float linearDepth(float d) {
+        return nearClip * farClip / max(0.00001, farClip - d * (farClip - nearClip)) * focusRegionScale;
+    }
+    float cocPixels(float z) {
+        float f = max(0.0001, focusDistance * focusRegionScale);
+        float circle = focalLengthCM / max(cameraFstop, 0.1) * abs(z - f) / max(z, 0.00001)
+                       * focalLengthCM / max(abs(f - focalLengthCM), focalLengthCM * .01);
+        return min(.125 / pixelSize.x, 0.5 * circle / sensorWidthCM / pixelSize.x);
+    }
+    bool insideFrame(vec2 uv) { return all(greaterThanEqual(uv, vec2(0.0))) && all(lessThanEqual(uv, vec2(1.0))); }
+    vec3 depthOfField(vec2 uv, float d, vec3 center) {
+        float zc = linearDepth(d);
+        float rc = cocPixels(zc);
+        float maxR = .125 / pixelSize.x;
+        float rs = rc;
+        for (int ring = 0; ring < 8; ++ring) {
+            float r = maxR * .02 * pow(1.75, float(ring));
+            for (int i = 0; i < 6; ++i) {
+                float a = (float(i) + .5 * float(ring - 2 * (ring / 2))) * 1.0471976;
+                vec2 q = uv + vec2(cos(a), sin(a)) * r * pixelSize;
+                if (!insideFrame(q)) continue;
+                float zq = linearDepth(texture2D(bridgeDepthSampler, q).r);
+                if (zq < zc * .98) { float cq = cocPixels(zq); if (cq >= r) rs = max(rs, cq); }
+            }
+        }
+        if (rs < .5) return center;
+        int n = int(clamp(rs * rs * .3, 12.0, 128.0));
+        float rotation = fract(52.9829189 * fract(dot(gl_FragCoord.xy, vec2(.06711056, .00583715)))) * 6.2831853;
+        float wc = 1.0 / (1.0 + dot(center, vec3(.2126, .7152, .0722)));
+        vec3 sum = center * wc; float total = wc;
+        for (int i = 0; i < 128; ++i) {
+            if (i >= n) break;
+            float r = rs * sqrt((float(i) + .5) / float(n));
+            float a = float(i) * 2.39996323 + rotation;
+            vec2 q = uv + vec2(cos(a), sin(a)) * r * pixelSize;
+            float w = 0.0;
+            if (insideFrame(q)) {
+                float zq = linearDepth(texture2D(bridgeDepthSampler, q).r);
+                float reach = zq > zc * 1.02 ? rc : cocPixels(zq);
+                w = clamp(reach - r + 1.0, 0.0, 1.0);
+            }
+            if (w > 0.0) {
+                vec3 c = texture2D(bridgeSampler, q).rgb;
+                float k = w / (1.0 + dot(c, vec3(.2126, .7152, .0722)));
+                sum += c * k; total += k;
+            }
+            sum += center * wc * (1.0 - w); total += wc * (1.0 - w);
+        }
+        return sum / total;
+    }
     void main() {
         outputColor = vec4(texture2D(bridgeSampler, imageUV).rgb, 1.0);
         if (previewDof && hasDepth) {
-            float d = texture2D(bridgeDepthSampler, imageUV).r;
-            float distanceCM = nearClip * farClip / max(0.00001, farClip - d * (farClip - nearClip));
-            distanceCM *= focusRegionScale;
-            float focusCM = max(0.0001,focusDistance*focusRegionScale);
-            float apertureCM = focalLengthCM / max(cameraFstop, 0.1);
-            float circleCM = apertureCM * abs(distanceCM - focusCM) / max(distanceCM, 0.00001)
-                             * focalLengthCM / max(abs(focusCM - focalLengthCM),focalLengthCM*.01);
-            float radius = min(.125/pixelSize.x, 0.5 * circleCM / sensorWidthCM / pixelSize.x);
-            vec3 blurred = vec3(0.0);
-            float dofWeight = 0.0;
-            for (int y = -3; y <= 3; ++y) {
-                for (int x = -3; x <= 3; ++x) {
-                    vec2 offset = vec2(float(x), float(y));
-                    float weight = exp(-dot(offset, offset) / 4.0);
-                    blurred += texture2D(bridgeSampler, imageUV + offset * pixelSize * radius / 3.0).rgb * weight;
-                    dofWeight += weight;
-                }
-            }
-            outputColor.rgb = blurred / dofWeight;
+            outputColor.rgb = depthOfField(imageUV, texture2D(bridgeDepthSampler, imageUV).r, outputColor.rgb);
         }
         if (screenBloom) {
             vec3 halo = vec3(0.0);

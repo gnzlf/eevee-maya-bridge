@@ -229,25 +229,72 @@ float occlusion(vec2 uv,float depth) {
     }
     return 1.0-clamp(total*aoAmount/8.0,0.0,.9);
 }
+// Thin-lens circle of confusion, in pixels, from a [0,1] depth sample.
+float linearDepth(float d) {
+    return nearClip * farClip / max(0.00001, farClip - d * (farClip - nearClip)) * focusScale;
+}
+float cocPixels(float z) {
+    float f = max(0.0001, focus * focusScale);
+    float circle = focal / max(fstop, 0.1) * abs(z-f) / max(z, 0.00001) * focal / max(abs(f-focal), focal*.01);
+    return min(.125/pixelSize.x, 0.5 * circle / sensor / pixelSize.x);
+}
+bool inside(vec2 uv) { return all(greaterThanEqual(uv, vec2(0))) && all(lessThanEqual(uv, vec2(1))); }
+// Scatter-as-gather: each tap contributes only where its own blur disc reaches
+// this pixel. Background taps never blur over a sharper pixel, out-of-focus
+// foreground spreads over sharp background, and taps outside the frame are
+// skipped instead of smearing the clamped border into vertical streaks. A
+// per-pixel rotation turns the residual undersampling into fine grain, and a
+// luminance weight keeps thin HDR highlights (rim lights) from leaving copies.
+vec3 depthOfField(vec2 uv, float d, vec3 center) {
+    float zc = linearDepth(d);
+    float rc = cocPixels(zc);
+    float maxR = .125/pixelSize.x;
+    float rs = rc;
+    // Nearer, blurrier neighbours whose disc reaches this pixel widen the gather.
+    // Geometric rings: dense near the pixel, where most discs end.
+    for (int ring=0;ring<8;++ring) {
+        float r = maxR * .02 * pow(1.75, float(ring));
+        for (int i=0;i<6;++i) {
+            float a = (float(i) + .5*float(ring & 1))*1.0471976;
+            vec2 q = uv + vec2(cos(a),sin(a))*r*pixelSize;
+            if (!inside(q)) continue;
+            float zq = linearDepth(texture(depthImage,q).r);
+            if (zq < zc*.98) { float cq = cocPixels(zq); if (cq >= r) rs = max(rs, cq); }
+        }
+    }
+    if (rs < .5) return center;
+    int n = int(clamp(rs*rs*.3, 12.0, 128.0));
+    float rotation = fract(52.9829189*fract(dot(gl_FragCoord.xy, vec2(.06711056,.00583715)))) * 6.2831853;
+    float wc = 1.0/(1.0+dot(center, vec3(.2126,.7152,.0722)));
+    vec3 sum = center*wc; float total = wc;
+    for (int i=0;i<128;++i) {
+        if (i>=n) break;
+        float r = rs*sqrt((float(i)+.5)/float(n));
+        float a = float(i)*2.39996323 + rotation;
+        vec2 q = uv + vec2(cos(a),sin(a))*r*pixelSize;
+        // A tap whose disc does not reach this pixel stands for what is seen
+        // here instead: the pixel itself. This keeps coverage proportional, so
+        // a blurred silhouette fades into the background instead of growing.
+        float w = 0.0;
+        if (inside(q)) {
+            float zq = linearDepth(texture(depthImage,q).r);
+            // Farther taps are seen through this pixel's own disc only.
+            float reach = zq > zc*1.02 ? rc : cocPixels(zq);
+            w = clamp(reach - r + 1.0, 0.0, 1.0);
+        }
+        if (w > 0.0) {
+            vec3 c = texture(colorImage,q).rgb;
+            float k = w/(1.0 + dot(c, vec3(.2126,.7152,.0722)));
+            sum += c*k; total += k;
+        }
+        sum += center*wc*(1.0-w); total += wc*(1.0-w);
+    }
+    return sum/total;
+}
 void main() {
     vec3 color = texture(colorImage, imageUV).rgb;
     float d = texture(depthImage, imageUV).r;
-    if (dof) {
-        float z = nearClip * farClip / max(0.00001, farClip - d * (farClip - nearClip));
-        z *= focusScale;
-        float f = max(0.0001, focus * focusScale);
-        float circle = focal / max(fstop, 0.1) * abs(z-f) / max(z, 0.00001) * focal / max(abs(f-focal),focal*.01);
-        float radius = min(.125/pixelSize.x, 0.5 * circle / sensor / pixelSize.x);
-        vec3 blurred = vec3(0); float total = 0;
-        for (int i=0;i<48;++i) {
-            float r=sqrt((float(i)+.5)/48.0);
-            float angle=float(i)*2.39996323;
-            vec2 o=vec2(cos(angle),sin(angle))*r;
-            float w=exp(-2.0*r*r);
-            blurred += texture(colorImage, imageUV+o*pixelSize*radius).rgb*w; total+=w;
-        }
-        color=blurred/total;
-    }
+    if (dof) color = depthOfField(imageUV, d, color);
     if (bloom) {
         vec3 halo=vec3(0); float total=0;
         for (int y=-3;y<=3;++y) for (int x=-3;x<=3;++x) {

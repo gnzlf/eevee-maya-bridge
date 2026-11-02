@@ -322,6 +322,11 @@ def update_effects(request):
     scatter.inputs["Anisotropy"].default_value=max(-.99,min(.99,spec.get("anisotropy",.3)))
     scene.eevee.volumetric_tile_size=str(spec.get("volume_tile",4))
     scene.eevee.volumetric_samples=spec.get("volume_samples",32)
+    # Like Arnold's atmosphere_volume, the fog ignores the HDRI dome by default:
+    # world light scatters evenly in every froxel and washes out the light beams.
+    # Eevee calls world/probe light on volumes "indirect"; a tiny clamp removes it.
+    clamp=0.0 if not spec.get("fog",False) or spec.get("fog_world_light",False) else 1e-6
+    if scene.eevee.clamp_volume_indirect!=clamp:scene.eevee.clamp_volume_indirect=clamp
 
 
 def world_bounds(objects):

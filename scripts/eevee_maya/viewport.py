@@ -5,6 +5,7 @@ import ctypes
 import time
 import math
 from collections import deque
+from .startup import hud_text
 
 ROOT = Path(__file__).resolve().parents[2]
 
@@ -316,13 +317,13 @@ class GraphicsNotice(render.MHUDRender):
         draw.beginDrawable(render.MUIDrawManager.kNonSelectable)
         draw.setColor(om.MColor((.95, .75, .3, 1)))
         draw.setFontSize(20)
-        draw.text2d(om.MPoint(x, y + 35), 'Eevee necesita OpenGL Core Profile', render.MUIDrawManager.kCenter)
+        draw.text2d(om.MPoint(x, y + 35), hud_text('Eevee necesita OpenGL Core Profile'), render.MUIDrawManager.kCenter)
         draw.setColor(om.MColor((.92, .94, .98, 1)))
         draw.setFontSize(12)
-        draw.text2d(om.MPoint(x, y + 5), 'Maya está usando DirectX 11.', render.MUIDrawManager.kCenter)
-        draw.text2d(om.MPoint(x, y - 20), 'Abre el cuadradito junto a Renderer > Eevee para configurar OpenGL.', render.MUIDrawManager.kCenter)
-        draw.text2d(om.MPoint(x, y - 45), 'Guarda tu trabajo y reinicia Maya después del cambio.', render.MUIDrawManager.kCenter)
-        draw.text2d(om.MPoint(x, y - 80), 'Renderer > Viewport 2.0 para volver', render.MUIDrawManager.kCenter)
+        draw.text2d(om.MPoint(x, y + 5), hud_text('Maya está usando DirectX 11.'), render.MUIDrawManager.kCenter)
+        draw.text2d(om.MPoint(x, y - 20), hud_text('Abre el cuadradito junto a Renderer > Eevee para configurar OpenGL.'), render.MUIDrawManager.kCenter)
+        draw.text2d(om.MPoint(x, y - 45), hud_text('Guarda tu trabajo y reinicia Maya después del cambio.'), render.MUIDrawManager.kCenter)
+        draw.text2d(om.MPoint(x, y - 80), hud_text('Renderer > Viewport 2.0 para volver'), render.MUIDrawManager.kCenter)
         draw.endDrawable()
         self.draws += 1
 
@@ -364,14 +365,14 @@ class Loading(render.MHUDRender):
             draw.line2d(om.MPoint(x+math.cos(angle)*19,y+55+math.sin(angle)*19),
                         om.MPoint(x+math.cos(angle)*29,y+55+math.sin(angle)*29))
         draw.setColor(om.MColor((.92,.94,.98,1)));draw.setFontSize(20)
-        draw.text2d(om.MPoint(x,y+3),'Eevee',render.MUIDrawManager.kCenter)
+        draw.text2d(om.MPoint(x,y+3), hud_text('Eevee'), render.MUIDrawManager.kCenter)
         draw.setFontSize(13)
         text = 'No se pudo iniciar Eevee' if error else startup.label(progress)
-        draw.text2d(om.MPoint(x,y-25),text,render.MUIDrawManager.kCenter,dynamic=True)
+        draw.text2d(om.MPoint(x,y-25), hud_text(text), render.MUIDrawManager.kCenter)
         draw.setFontSize(11);draw.setColor(om.MColor((.65,.69,.75,1)))
         detail = str(error).splitlines()[-1][:max(24,min(160,int(width/7)))] if error else '%.0f s transcurridos' % elapsed
-        draw.text2d(om.MPoint(x,y-49),detail,render.MUIDrawManager.kCenter,dynamic=True)
-        draw.text2d(om.MPoint(x,y-78),'Renderer > Viewport 2.0 para salir',render.MUIDrawManager.kCenter)
+        draw.text2d(om.MPoint(x,y-49), hud_text(detail), render.MUIDrawManager.kCenter)
+        draw.text2d(om.MPoint(x,y-78), hud_text('Renderer > Viewport 2.0 para salir'), render.MUIDrawManager.kCenter)
         draw.endDrawable()
         self.draws += 1
         self.last_status = {'label':text,'phase':phase,'elapsed':elapsed,'error':bool(error),

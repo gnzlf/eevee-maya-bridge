@@ -344,6 +344,8 @@ def effects():
     return {"fog": attr(node, "volumetrics", False), "fog_density": attr(node, "density", 0.015),
             "fog_distance": attr(node,"fogDistance",100),
             "fog_auto_range": bool(attr(node,'fogAutoRange',True)),
+            # Arnold's atmosphere_volume ignores the skydome; keep the beams readable.
+            "fog_world_light": bool(attr(node, "fogWorldLight", False)),
             "fog_color": list(attr(node, "fogColor", (0.8, 0.85, 1.0))),
             "anisotropy": attr(node, "anisotropy", 0.3),
             "bloom": attr(node, "bloom", False), "bloom_threshold": attr(node, "bloomThreshold", 1),
