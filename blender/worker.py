@@ -174,6 +174,30 @@ def make_material(spec, transmission_preview=False):
             if normal['kind']=='bump':converter.invert=normal.get('invert',False)
             mat.node_tree.links.new(image.outputs["Color"], converter.inputs["Color" if normal["kind"] == "normal" else "Height"])
             mat.node_tree.links.new(converter.outputs["Normal"], shader.inputs["Normal"])
+    if spec.get('kind') == 'blinn' and spec.get('specular_rolloff') is not None:
+        # Maya Blinn is not energy-normalised and has no dielectric Fresnel:
+        # under a uniform SkyDome Viewport 2.0 reflects specularColor *
+        # specularRollOff at every angle. Principled keeps the diffuse part
+        # and a Fresnel-free glossy lobe carries that reflectance.
+        tree = mat.node_tree
+        shader.inputs['Specular IOR Level'].default_value = 0
+        glossy = tree.nodes.new('ShaderNodeBsdfAnisotropic')
+        glossy.name = 'EeveeMayaBlinnSpecular'
+        rolloff = max(0.0, min(1.0, spec['specular_rolloff']))
+        glossy.inputs['Color'].default_value = (*(c * rolloff for c in spec.get('specular_color', (1, 1, 1))), 1)
+        tint_links = shader.inputs['Specular Tint'].links
+        if tint_links:
+            scale = tree.nodes.new('ShaderNodeVectorMath'); scale.operation = 'SCALE'
+            scale.inputs['Scale'].default_value = rolloff
+            tree.links.new(tint_links[0].from_socket, scale.inputs[0])
+            tree.links.new(scale.outputs['Vector'], glossy.inputs['Color'])
+        glossy.inputs['Roughness'].default_value = spec['roughness']
+        if shader.inputs['Normal'].links:
+            tree.links.new(shader.inputs['Normal'].links[0].from_socket, glossy.inputs['Normal'])
+        add = tree.nodes.new('ShaderNodeAddShader')
+        tree.links.new(shader.outputs[0], add.inputs[0]); tree.links.new(glossy.outputs[0], add.inputs[1])
+        output = next(node for node in tree.nodes if node.type == 'OUTPUT_MATERIAL')
+        tree.links.new(add.outputs[0], output.inputs['Surface'])
     if transmission_preview and (spec.get('transmission', 0) > 0 or spec.get('transmission_texture')):
         # The fast viewport has no refraction trace behind eye shells. Mixing
         # transparent transmission with a Fresnel reflection keeps the iris

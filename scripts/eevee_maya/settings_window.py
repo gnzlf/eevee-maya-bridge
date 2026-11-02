@@ -6,9 +6,77 @@ from . import graphics, maya_lights, hdri, light_photometry
 from .ui import QtCore
 
 WINDOW = "eeveeViewportSettings"
-INTERACTION_SAMPLES = (('1 · como Blender (más fluido)', 1), ('2', 2), ('4', 4),
-                       ('Igual que Maya (sin reducir)', 0))
+INTERACTION_SAMPLES = (('1 (más fluido)', 1), ('2', 2), ('4', 4), ('Igual que Maya', 0))
 _window = None
+
+
+LABEL = 141          # matches attrControlGrp label column, so all rows align
+GAP = 3
+
+
+def _row(label):
+    """Label column + control column; the caller adds the control."""
+    row = cmds.rowLayout(numberOfColumns=2, columnWidth2=(LABEL, 150), adjustableColumn=2,
+                         columnAttach2=('right', 'left'), columnOffset2=(GAP, GAP))
+    cmds.text(label=label, align='right')
+    return row
+
+
+def _menu(label, items, value=None, command=None, annotation=''):
+    _row(label)
+    menu = cmds.optionMenu(annotation=annotation)
+    if command: cmds.optionMenu(menu, edit=True, changeCommand=command)
+    for item in items: cmds.menuItem(label=item)
+    if value is not None and value in items: cmds.optionMenu(menu, edit=True, value=value)
+    cmds.setParent('..')
+    return menu
+
+
+def _check(label, value=False, command=None, annotation=''):
+    _row('')
+    box = cmds.checkBox(label=label, value=value, annotation=annotation)
+    if command: cmds.checkBox(box, edit=True, changeCommand=command)
+    cmds.setParent('..')
+    return box
+
+
+def _buttons(*pairs):
+    """Buttons share the control column evenly and shrink with the window."""
+    _row('')
+    form = cmds.formLayout(height=26)
+    buttons = [cmds.button(label=label, command=command, height=24) for label, command in pairs]
+    step = 100.0 / len(buttons)
+    cmds.formLayout(form, edit=True,
+        attachForm=[(b, 'top', 1) for b in buttons],
+        attachPosition=[(b, 'left', 1, int(round(i * step))) for i, b in enumerate(buttons)] +
+                       [(b, 'right', 1, int(round((i + 1) * step))) for i, b in enumerate(buttons)])
+    cmds.setParent('..'); cmds.setParent('..')
+    return buttons
+
+
+def _section(title):
+    """Flat heading with a thin rule instead of nested boxed frames."""
+    cmds.separator(style='none', height=8)
+    cmds.text(label=title, align='left', font='boldLabelFont', height=18)
+    cmds.separator(style='in', height=6)
+
+
+def _more(title='Más opciones'):
+    frame = cmds.frameLayout(label=title, collapsable=True, collapse=True, marginWidth=0, marginHeight=4,
+                             borderVisible=False, font='plainLabelFont')
+    cmds.columnLayout(adjustableColumn=True, rowSpacing=4)
+    return frame
+
+
+def _end_more():
+    cmds.setParent('..'); cmds.setParent('..')
+
+
+def _page():
+    # One scroll per page that fills the tab: the page scrolls as a whole.
+    scroll = cmds.scrollLayout(childResizable=True, horizontalScrollBarThickness=0, verticalScrollBarThickness=12)
+    cmds.columnLayout(adjustableColumn=True, rowSpacing=4, columnAttach=('both', 10))
+    return scroll
 
 
 class SettingsWindow:
@@ -22,162 +90,135 @@ class SettingsWindow:
         self.hdri = None
         self.hdri_names = None
         self.hdri_image = None
+        self.hdri_widgets = {}
         self.compatibility_only = False
         self.timer = QtCore.QTimer()
         if cmds.window(WINDOW, exists=True): cmds.deleteUI(WINDOW)
-        self.window = cmds.window(WINDOW, title="Eevee · Viewport", widthHeight=(570, 690), sizeable=True)
-        cmds.columnLayout(adjustableColumn=True, rowSpacing=8, columnAttach=("both", 10))
+        # A saved size from the old boxed layout would reopen it tiny.
+        if cmds.windowPref(WINDOW, exists=True): cmds.windowPref(WINDOW, remove=True)
+        self.window = cmds.window(WINDOW, title="Eevee", widthHeight=(470, 620), sizeable=True)
+        form = cmds.formLayout()
         camera_name = cmds.modelPanel(self.panel,query=True,camera=True).rsplit("|", 1)[-1]
-        cmds.text(label="Eevee   ·   " + camera_name, align="left", font="boldLabelFont", height=28)
-        self.status = cmds.text(label="", align="left", height=22)
+        header = cmds.columnLayout(adjustableColumn=True, rowSpacing=0, columnAttach=('both', 12))
+        cmds.separator(style='none', height=8)
+        self.title = cmds.text(label=camera_name, align="left", font="boldLabelFont", height=20)
+        self.status = cmds.text(label="", align="left", height=18, font='smallPlainLabelFont')
+        cmds.separator(style='none', height=4)
+        cmds.setParent(form)
         import maya.api.OpenMayaRender as render
         if render.MRenderer.drawAPI() == render.MRenderer.kDirectX11:
             self.compatibility_only = True
-            cmds.text(label=graphics.DIRECTX_MESSAGE, align='left', wordWrap=True, height=60)
-            cmds.text(label='Reinicia Maya para aplicar el cambio.', align='left', height=24)
-            self.graphics_status = cmds.text(label='', align='left', wordWrap=True, height=40)
-            cmds.button(label='Configurar OpenGL', command=self.configure_opengl)
+            body = cmds.columnLayout(adjustableColumn=True, rowSpacing=8, columnAttach=('both', 12))
+            cmds.text(label=graphics.DIRECTX_MESSAGE, align='left', wordWrap=True)
+            cmds.text(label='Reinicia Maya para aplicar el cambio.', align='left')
+            self.graphics_status = cmds.text(label='', align='left', wordWrap=True)
+            cmds.button(label='Configurar OpenGL', command=self.configure_opengl, height=26)
+            cmds.formLayout(form, edit=True,
+                attachForm=[(header,'top',0),(header,'left',0),(header,'right',0),(body,'left',0),(body,'right',0)],
+                attachControl=[(body,'top',4,header)])
             cmds.showWindow(self.window)
             return
-        tabs = cmds.tabLayout(innerMarginWidth=8, innerMarginHeight=8)
-        viewport_scroll = cmds.scrollLayout(childResizable=True)
-        viewport_tab = cmds.columnLayout(adjustableColumn=True, rowSpacing=8)
-        cmds.frameLayout(label='Vista', collapsable=False, marginWidth=8, marginHeight=8)
-        cmds.columnLayout(adjustableColumn=True, rowSpacing=5)
-        self.lighting = cmds.optionMenu(label="Iluminación", changeCommand=self.set_lighting)
+        # The tab area is attached to every window edge, so it grows with the window.
+        tabs = cmds.tabLayout(innerMarginWidth=0, innerMarginHeight=4, childResizable=True)
+        cmds.formLayout(form, edit=True,
+            attachForm=[(header,'top',0),(header,'left',0),(header,'right',0),
+                        (tabs,'left',4),(tabs,'right',4),(tabs,'bottom',4)],
+            attachControl=[(tabs,'top',0,header)])
+
+        # Vista
+        viewport_scroll = _page()
+        _section('Vista')
         self.light_modes = [("Por defecto", "default"), ("Todas", "all"), ("Seleccionadas", "active"), ("Conjunto fijado", "selected"), ("Plana", "flat"), ("Sin luces", "none")]
-        for label, _ in self.light_modes: cmds.menuItem(label=label)
-        for flag, label in (("displayTextures", "Texturas"),):
-            self.widgets[flag] = cmds.checkBox(label=label, changeCommand=lambda value, f=flag:self.set_panel(f, value))
-        cmds.setParent('..'); cmds.setParent('..')
-        cmds.frameLayout(label='Imagen', collapsable=False, marginWidth=8, marginHeight=8)
-        cmds.columnLayout(adjustableColumn=True, rowSpacing=5)
+        self.lighting = _menu("Iluminación", [label for label,_ in self.light_modes], command=self.set_lighting)
+        self.widgets['displayTextures'] = _check('Texturas', command=lambda value:self.set_panel('displayTextures', value))
         self.attribute("hardwareRenderingGlobals.ssaoEnable", "Oclusión ambiental")
         self.attribute("hardwareRenderingGlobals.multiSampleEnable", "Antialiasing")
-        cmds.setParent('..'); cmds.setParent('..')
-        cmds.frameLayout(label='Más opciones', collapsable=True, collapse=True, marginWidth=8, marginHeight=8)
-        cmds.columnLayout(adjustableColumn=True, rowSpacing=5)
-        for flag, label in (("depthOfFieldPreview", "Vista previa de profundidad de campo"),
+        _more()
+        for flag, label in (("depthOfFieldPreview", "Vista previa de DOF"),
                             ("useDefaultMaterial", "Material por defecto"), ("wireframeOnShaded", "Alambre sobre sombreado")):
-            self.widgets[flag] = cmds.checkBox(label=label, changeCommand=lambda value, f=flag:self.set_panel(f, value))
+            self.widgets[flag] = _check(label, command=lambda value, f=flag:self.set_panel(f, value))
         self.attribute("hardwareRenderingGlobals.ssaoRadius", "Radio AO")
         self.attribute("hardwareRenderingGlobals.ssaoAmount", "Intensidad AO")
         self.attribute("hardwareRenderingGlobals.multiSampleCount", "Muestras AA")
-        cmds.setParent('..'); cmds.setParent('..')
-        cmds.frameLayout(label='Rendimiento', collapsable=True, collapse=True, marginWidth=8, marginHeight=8)
-        cmds.columnLayout(adjustableColumn=True, rowSpacing=5)
-        cmds.checkBox(label='Calidad adaptativa', value=bool(controller.engine.config.get('adaptive_quality',True)),
-                      changeCommand=self.set_adaptive_quality)
-        edit_width=cmds.optionMenu(label='Resolución al editar',changeCommand=self.set_interaction_width)
-        for width in (640,960,1280,1920):cmds.menuItem(label=str(width))
-        cmds.optionMenu(edit_width,edit=True,value=str(controller.engine.config.get('interaction_width',960)))
-        cmds.checkBox(label='Navegación rápida',value=bool(controller.engine.config.get('fast_navigation',True)),
-                      changeCommand=lambda value:self.set_navigation('fast_navigation',bool(value)))
-        navigation=cmds.optionMenu(label='Resolución al navegar',changeCommand=lambda value:self.set_navigation('navigation_width',int(value)))
-        for width in (320,480,640,960,1280,1920):cmds.menuItem(label=str(width))
-        cmds.optionMenu(navigation,edit=True,value=str(controller.engine.config.get('navigation_width',640)))
-        samples=cmds.optionMenu(label='Muestras AA al moverse',changeCommand=self.set_interaction_samples,
-                                annotation='Muestras mientras navegas, editas o reproduces. Al soltar se usan las Muestras AA de Maya.')
-        for label,_ in INTERACTION_SAMPLES:cmds.menuItem(label=label)
-        current=int(controller.engine.config.get('interaction_samples',1))
-        cmds.optionMenu(samples,edit=True,value=next((label for label,value in INTERACTION_SAMPLES if value==current),INTERACTION_SAMPLES[0][0]))
-        cmds.setParent('..'); cmds.setParent('..')
-        cmds.setParent(tabs)
-        shadow_scroll = cmds.scrollLayout(childResizable=True)
-        shadow_tab = cmds.columnLayout(adjustableColumn=True, rowSpacing=8)
-        cmds.frameLayout(label='Sombras', collapsable=False, marginWidth=8, marginHeight=8)
-        cmds.columnLayout(adjustableColumn=True, rowSpacing=5)
-        self.shadow_enabled = cmds.checkBox(label='Sombras del viewport de Maya',
-                                            changeCommand=lambda value:self.set_panel('shadows', value))
-        values = shadow_quality.resolve(controller.engine.config)
-        self.shadow_quality = cmds.optionMenu(label='Calidad de sombras', changeCommand=self.set_shadow_quality)
-        for label, key in shadow_quality.LABELS: cmds.menuItem(label=label)
-        cmds.optionMenu(self.shadow_quality, edit=True,
-                        value=next(label for label,key in shadow_quality.LABELS if key==values['preset']))
-        cmds.setParent('..'); cmds.setParent('..')
-        cmds.frameLayout(label='Avanzado', collapsable=True, collapse=True, marginWidth=8, marginHeight=8)
-        cmds.columnLayout(adjustableColumn=True, rowSpacing=5)
-        self.shadow_pool = cmds.optionMenu(label='Memoria de sombras', changeCommand=self.set_shadow_pool)
-        cmds.menuItem(label='Automática según calidad')
-        for pool in shadow_quality.POOLS: cmds.menuItem(label=pool+' MB')
-        pool = str(controller.engine.config.get('shadow_pool_size', 'auto'))
-        cmds.optionMenu(self.shadow_pool, edit=True,
-                        value=pool+' MB' if pool in shadow_quality.POOLS else 'Automática según calidad')
-        cmds.setParent('..'); cmds.setParent('..')
-        cmds.button(label='Editar luz seleccionada', command=lambda *_:cmds.tabLayout(tabs, edit=True, selectTab=light_tab))
-        cmds.setParent(tabs)
-        camera_scroll = cmds.scrollLayout(childResizable=True)
-        camera_tab = cmds.columnLayout(adjustableColumn=True, rowSpacing=8)
-        cmds.frameLayout(label='Enfoque', collapsable=False, marginWidth=8, marginHeight=8)
-        cmds.columnLayout(adjustableColumn=True, rowSpacing=5)
-        cmds.button(label='Activar profundidad de campo',command=self.enable_dof)
-        cmds.button(label='Enfocar selección',command=self.focus_selection)
-        cmds.button(label='Enfocar con clic',command=self.pick_focus)
-        self.dof_status=cmds.text(label='',align='left',height=22)
-        cmds.setParent('..'); cmds.setParent('..')
-        cmds.frameLayout(label='Cámara', collapsable=True, collapse=True, marginWidth=8, marginHeight=8)
-        self.camera_column = cmds.columnLayout(adjustableColumn=True, rowSpacing=5)
-        cmds.setParent(tabs)
-        light_tab = cmds.scrollLayout(childResizable=True)
-        light_controls=cmds.columnLayout(adjustableColumn=True,rowSpacing=6)
-        cmds.frameLayout(label='Iluminación', collapsable=False, marginWidth=8, marginHeight=8)
-        cmds.columnLayout(adjustableColumn=True, rowSpacing=5)
-        self.intensity_mode=cmds.optionMenu(label='Intensidad de las luces',changeCommand=self.set_intensity_mode)
-        for label,key in light_photometry.LABELS:cmds.menuItem(label=label)
-        mode=controller.engine.config.get('light_intensity_mode','viewport2')
-        cmds.optionMenu(self.intensity_mode,edit=True,value=next(label for label,key in light_photometry.LABELS if key==mode))
-        cmds.button(label='Activar volumen en luz seleccionada',command=self.prepare_volume)
-        cmds.button(label='Light Linking…',command=self.open_light_linking)
-        cmds.setParent('..'); cmds.setParent('..')
-        cmds.frameLayout(label='Atributos de la luz seleccionada', collapsable=True, collapse=True, marginWidth=8, marginHeight=8)
-        self.light_column=cmds.columnLayout(adjustableColumn=True,rowSpacing=5)
-        cmds.setParent(light_controls)
-        cmds.setParent(tabs)
-        hdri_tab=cmds.scrollLayout(childResizable=True)
-        hdri_controls=cmds.columnLayout(adjustableColumn=True,rowSpacing=8)
-        cmds.frameLayout(label='Entorno HDRI', collapsable=False, marginWidth=8, marginHeight=8)
-        cmds.columnLayout(adjustableColumn=True,rowSpacing=5)
-        self.hdri_menu=cmds.optionMenu(label='SkyDome',changeCommand=self.choose_hdri)
-        cmds.button(label='Usar SkyDome seleccionada',command=self.selected_hdri)
-        cmds.button(label='Crear SkyDome y cargar HDRI…',command=self.create_hdri)
-        cmds.button(label='Cargar imagen…',command=self.load_hdri)
-        cmds.setParent('..'); cmds.setParent('..')
-        cmds.frameLayout(label='Ajustes del entorno', collapsable=True, collapse=False, marginWidth=8, marginHeight=8)
-        self.hdri_column=cmds.columnLayout(adjustableColumn=True,rowSpacing=6)
-        cmds.setParent(hdri_controls)
-        cmds.frameLayout(label='Avanzado', collapsable=True, collapse=True, marginWidth=8, marginHeight=8)
-        cmds.columnLayout(adjustableColumn=True,rowSpacing=5)
-        self.reflection_quality=cmds.optionMenu(label='Detalle de reflejos',changeCommand=self.set_hdri_resolution)
-        for label in ('Nativo','1024','2048','4096'):cmds.menuItem(label=label)
-        minimum=int(controller.engine.config.get('hdri_resolution',2048))
-        cmds.optionMenu(self.reflection_quality,edit=True,value=str(minimum) if minimum else 'Nativo')
-        cmds.button(label='Usar todas las luces',command=lambda *_:self.set_lighting('Todas'))
-        cmds.setParent('..'); cmds.setParent('..')
-        cmds.setParent(tabs)
-        effects_scroll = cmds.scrollLayout(childResizable=True)
-        effects_tab = cmds.columnLayout(adjustableColumn=True, rowSpacing=8)
-        cmds.frameLayout(label='Efectos', collapsable=False, marginWidth=8, marginHeight=8)
-        cmds.columnLayout(adjustableColumn=True,rowSpacing=5)
-        self.attribute("hardwareRenderingGlobals.bloomEnable", "Bloom de viewport")
+        _end_more()
+        _section('Efectos')
+        self.attribute("hardwareRenderingGlobals.bloomEnable", "Bloom")
         self.attribute("hardwareRenderingGlobals.bloomThreshold", "Umbral")
         self.attribute("hardwareRenderingGlobals.bloomAmount", "Intensidad")
-        cmds.setParent('..'); cmds.setParent('..')
-        cmds.frameLayout(label='Atmósfera', collapsable=True, collapse=True, marginWidth=8, marginHeight=8)
-        cmds.columnLayout(adjustableColumn=True,rowSpacing=5)
+        _more('Atmósfera')
         node = ui.scene_settings(select=False)
-        for attr, label in (("volumetrics", "Atmósfera volumétrica Eevee"), ("density", "Densidad"),
+        for attr, label in (("volumetrics", "Atmósfera volumétrica"), ("density", "Densidad"),
                             ('fogAutoRange','Alcance automático'), ("fogDistance","Alcance (cm)"),
                             ("fogColor", "Color"), ("anisotropy", "Anisotropía")):
             self.attribute(node+"."+attr, label)
-        cmds.setParent('..'); cmds.setParent('..')
-        cmds.frameLayout(label='Calidad', collapsable=False, marginWidth=8, marginHeight=8)
-        cmds.columnLayout(adjustableColumn=True,rowSpacing=5)
-        menu = self.quality = cmds.optionMenu(label="Ancho del render", changeCommand=self.set_render_width)
-        for width in (320, 640, 960, 1280, 1920): cmds.menuItem(label=str(width))
-        cmds.optionMenu(menu, edit=True, value=str(controller.engine.config["max_width"]))
-        cmds.setParent('..'); cmds.setParent('..')
+        _end_more()
+        cmds.setParent(tabs)
+
+        # Luces y sombras
+        light_tab = _page()
+        _section('Luces')
+        mode=controller.engine.config.get('light_intensity_mode','viewport2')
+        self.intensity_mode=_menu('Intensidad', [label for label,_ in light_photometry.LABELS],
+                                  next(label for label,key in light_photometry.LABELS if key==mode), self.set_intensity_mode)
+        _buttons(('Light Linking…', self.open_light_linking), ('Volumen', self.prepare_volume))
+        _section('Sombras')
+        self.shadow_enabled = _check('Sombras', command=lambda value:self.set_panel('shadows', value))
+        values = shadow_quality.resolve(controller.engine.config)
+        self.shadow_quality = _menu('Calidad', [label for label,_ in shadow_quality.LABELS],
+                                    next(label for label,key in shadow_quality.LABELS if key==values['preset']), self.set_shadow_quality)
+        _more()
+        pool = str(controller.engine.config.get('shadow_pool_size', 'auto'))
+        self.shadow_pool = _menu('Memoria', ['Automática'] + [p+' MB' for p in shadow_quality.POOLS],
+                                 pool+' MB' if pool in shadow_quality.POOLS else 'Automática', self.set_shadow_pool)
+        _end_more()
+        _section('Luz seleccionada')
+        self.light_column=cmds.columnLayout(adjustableColumn=True,rowSpacing=4)
+        cmds.setParent(tabs)
+
+        # Entorno
+        hdri_tab = _page()
+        _section('HDRI')
+        _row('SkyDome'); self.hdri_menu=cmds.optionMenu(changeCommand=self.choose_hdri); cmds.setParent('..')
+        _buttons(('Usar selección', self.selected_hdri), ('Nueva…', self.create_hdri), ('Imagen…', self.load_hdri))
+        self.hdri_column=cmds.columnLayout(adjustableColumn=True,rowSpacing=4)
+        cmds.setParent('..')
+        _more()
+        minimum=int(controller.engine.config.get('hdri_resolution',2048))
+        self.reflection_quality=_menu('Detalle de reflejos', ['Nativo','1024','2048','4096'],
+                                      str(minimum) if minimum else 'Nativo', self.set_hdri_resolution)
+        _end_more()
+        cmds.setParent(tabs)
+
+        # Cámara
+        camera_scroll = _page()
+        _section('Enfoque')
+        _row(''); self.dof_status=cmds.text(label='',align='left',height=20); cmds.setParent('..')
+        _buttons(('Activar DOF', self.enable_dof), ('Enfocar selección', self.focus_selection), ('Enfocar con clic', self.pick_focus))
+        _section('Cámara')
+        self.camera_column = cmds.columnLayout(adjustableColumn=True, rowSpacing=4)
+        cmds.setParent(tabs)
+
+        # Rendimiento
+        performance_scroll = _page()
+        _section('Resolución')
+        self.quality = _menu('Ancho del render', ['320','640','960','1280','1920'], str(controller.engine.config["max_width"]), self.set_render_width)
+        _section('Mientras te mueves')
+        _check('Calidad adaptativa', bool(controller.engine.config.get('adaptive_quality',True)), self.set_adaptive_quality,
+               'Reduce resolución y muestras al editar o reproducir; al soltar vuelve a la calidad completa.')
+        _menu('Resolución al editar', ['640','960','1280','1920'], str(controller.engine.config.get('interaction_width',960)), self.set_interaction_width)
+        current=int(controller.engine.config.get('interaction_samples',1))
+        _menu('Muestras AA', [label for label,_ in INTERACTION_SAMPLES],
+              next((label for label,value in INTERACTION_SAMPLES if value==current),INTERACTION_SAMPLES[0][0]), self.set_interaction_samples,
+              'Muestras mientras navegas, editas o reproduces. Al soltar se usan las Muestras AA de Maya.')
+        _check('Navegación rápida', bool(controller.engine.config.get('fast_navigation',True)),
+               lambda value:self.set_navigation('fast_navigation',bool(value)))
+        _menu('Resolución al navegar', ['320','480','640','960','1280','1920'], str(controller.engine.config.get('navigation_width',640)),
+              lambda value:self.set_navigation('navigation_width',int(value)))
+        cmds.setParent(tabs)
+
         self.tabs=tabs;self.hdri_tab=hdri_tab
-        cmds.tabLayout(tabs, edit=True, tabLabel=((viewport_scroll,"Viewport"),(shadow_scroll,"Sombras"),(camera_scroll,"Cámara"),(light_tab,"Luces"),(hdri_tab,"Entorno"),(effects_scroll,"Eevee")))
+        cmds.tabLayout(tabs, edit=True, tabLabel=((viewport_scroll,"Vista"),(light_tab,"Luces"),(hdri_tab,"Entorno HDRI"),
+                                                  (camera_scroll,"Cámara"),(performance_scroll,"Rendimiento")))
         self.timer.timeout.connect(self.refresh)
         self.timer.start(500)
         cmds.scriptJob(uiDeleted=[self.window,self.timer.stop],runOnce=True)
@@ -241,24 +282,24 @@ class SettingsWindow:
             old=cmds.setParent(query=True);cmds.setParent(self.hdri_column)
             self.hdri_background=None
             if self.hdri:
-                cmds.frameLayout(label='Básico',collapsable=False,marginWidth=6,marginHeight=5)
-                cmds.columnLayout(adjustableColumn=True,rowSpacing=4)
-                self.attribute(self.hdri+'.visibility','Entorno activo')
-                self.hdri_background=cmds.checkBox(label='Mostrar imagen de fondo',changeCommand=self.show_hdri_background)
-                self.attribute(self.hdri+'.intensity','Intensidad')
-                self.attribute(self.hdri+'.exposure','Exposición')
-                cmds.setParent('..');cmds.setParent('..')
-                cmds.frameLayout(label='Avanzado',collapsable=True,collapse=True,marginWidth=6,marginHeight=5)
-                cmds.columnLayout(adjustableColumn=True,rowSpacing=4)
-                self.attribute(self.hdri+'.resolution','Resolución')
+                self.hdri_widgets={}
+                def bound(plug,label):
+                    control=self.attribute(plug,label)
+                    if control:self.hdri_widgets[plug.rsplit('.',1)[-1]]=control
+                bound(self.hdri+'.visibility','Activo')
+                self.hdri_background=_check('Mostrar de fondo',command=self.show_hdri_background)
+                bound(self.hdri+'.intensity','Intensidad')
+                bound(self.hdri+'.exposure','Exposición')
                 parent=cmds.listRelatives(self.hdri,parent=True,fullPath=True)[0]
-                for axis in 'XYZ':self.attribute(parent+'.rotate'+axis,'Rotación '+axis)
-                if connection:
-                    self.attribute(connection[0]+'.'+connection[1],'Imagen HDRI')
-                    self.attribute(connection[0]+'.colorSpace','Espacio de color')
-                else:cmds.text(label='Sin imagen HDRI',align='left',height=20)
-                cmds.setParent('..');cmds.setParent('..')
-            else:cmds.text(label='Crea o selecciona una SkyDome.',align='left',height=22)
+                bound(parent+'.rotateY','Rotación')
+                if connection:bound(connection[0]+'.'+connection[1],'Imagen')
+                else:_row('');cmds.text(label='Sin imagen HDRI',align='left');cmds.setParent('..')
+                _more('Avanzado')
+                bound(self.hdri+'.resolution','Resolución')
+                for axis in 'XZ':bound(parent+'.rotate'+axis,'Rotación '+axis)
+                if connection:bound(connection[0]+'.colorSpace','Espacio de color')
+                _end_more()
+            else:_row('');cmds.text(label='Crea o elige una SkyDome.',align='left');cmds.setParent('..')
             cmds.setParent(old);self.hdri_image=signature
         if self.hdri and self.hdri_background:
             cmds.checkBox(self.hdri_background,edit=True,value=cmds.getAttr(self.hdri+'.camera')>0,
@@ -445,28 +486,28 @@ class SettingsWindow:
             cmds.text(self.dof_status,edit=True,label=dof_text)
         if camera!=self.camera:
             for child in cmds.columnLayout(self.camera_column,query=True,childArray=True) or []: cmds.deleteUI(child)
+            cmds.text(self.title, edit=True, label=camera.rsplit("|",1)[-1])
             old=cmds.setParent(query=True); cmds.setParent(self.camera_column)
-            cmds.text(label=camera.rsplit("|",1)[-1],align="left")
-            for attr,label in (("depthOfField","DOF de la cámara"),("focusDistance","Distancia de enfoque"),
-                               ("fStop","F Stop"),("focalLength","Distancia focal"),("focusRegionScale","Escala de región de foco")):
+            for attr,label in (("depthOfField","DOF de la cámara"),("focusDistance","Enfoque"),
+                               ("fStop","F Stop"),("focalLength","Focal"),("focusRegionScale","Región de foco")):
                 self.attribute(camera+"."+attr,label)
-            self.attribute("hardwareRenderingGlobals.renderDepthOfField","DOF global de viewport")
+            self.attribute("hardwareRenderingGlobals.renderDepthOfField","DOF global")
             cmds.setParent(old); self.camera=camera
         lights=maya_lights.selected()
         light=lights[0] if lights else ""
         if light!=self.light:
             for child in cmds.columnLayout(self.light_column,query=True,childArray=True) or []:cmds.deleteUI(child)
             old=cmds.setParent(query=True);cmds.setParent(self.light_column)
-            cmds.text(label=light.rsplit("|",1)[-1] if light else "Ninguna luz seleccionada",align="left")
+            _row('');cmds.text(label=light.rsplit("|",1)[-1] if light else "Selecciona una luz para editarla aquí.",align="left",font='plainLabelFont' if light else 'obliqueLabelFont');cmds.setParent('..')
             if light:
                 for attr,label in (("color","Color"),("intensity","Intensidad"),("aiExposure","Exposición Arnold"),
                                    ("ambientShade","Ambient Shade"),("normalize","Normalizar área"),("legacyIntensity","Intensidad Maya antigua"),
                                    ("aiSpread","Apertura de área Arnold"),("aiDiffuse","Difuso Arnold"),("aiSpecular","Especular Arnold"),
-                                   ("decayRate","Decaimiento Maya"),("centerOfIllumination","Referencia de decaimiento"),
+                                   ("decayRate","Decaimiento Maya"),("centerOfIllumination","Ref. decaimiento"),
                                    ("coneAngle","Ángulo de cono"),("penumbraAngle","Penumbra"),("dropoff","Dropoff"),
                                    ("emitDiffuse","Emitir difuso"),("emitSpecular","Emitir especular"),
                                    ("lightRadius","Radio de sombra"),("lightAngle","Ángulo de sombra"),
-                                   ("useRayTraceShadows","Proyectar sombras de trazado"),
+                                   ("useRayTraceShadows","Sombras de trazado"),
                                    ("useDepthMapShadows","Sombras de mapa"),("eeveeVolume","Volumétrica Eevee"),
                                    ("eeveeVolumeFactor","Intensidad de volumen")):
                     if cmds.nodeType(light)=="directionalLight" and attr in ("decayRate","centerOfIllumination"):continue

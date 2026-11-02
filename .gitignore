@@ -11,6 +11,7 @@ tests/*
 tools/*
 !tools/build_release.py
 !tools/publish_release.ps1
+!tools/publicar_version_github.ps1
 *.part
 *.log
 .vs/

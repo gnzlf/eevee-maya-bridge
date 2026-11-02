@@ -150,3 +150,5 @@ Los artefactos quedan en `dist/`. Para publicar una nueva actualización:
 ```
 
 El script construye los artefactos, sube `main` y crea el release. No reemplaza versiones ya publicadas. Los usuarios recibirán la oferta al volver a cargar Maya o al pulsar Buscar actualizaciones. También existe el workflow manual **Publicar versión** en GitHub Actions. Cada release conserva ZIP, instalador y SHA256SUMS.txt.
+
+También puedes abrir `PUBLICAR_VERSION_GITHUB.cmd` desde el explorador. Lee la versión de `scripts/eevee_maya/__init__.py`, muestra los cambios que incluirá, pide escribir `PUBLICAR`, compila el ZIP y el instalador, hace commit y push a `main` y crea el release en GitHub. Si la versión ya existe, incrementa automáticamente el número de parche antes de publicar, sin reemplazar el release existente.

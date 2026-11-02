@@ -142,6 +142,8 @@ def material(node):
         "ior": attr(node, "specularIOR", 1.5),
         "specular_weight": attr(node, "specular", 1) if standard else (0 if kind == 'lambert' else .5),
         "specular_color": list(attr(node, "specularColor", (1, 1, 1))),
+        # Viewport 2.0 reflects the environment on Blinn as specularColor*rollOff.
+        "specular_rolloff": attr(node, "specularRollOff", .7) if kind == 'blinn' else None,
         "specular_color_texture": texture(node, "specularColor") if standard or kind in ('blinn','phong') else None,
         "transmission_color": list(attr(node, "transmissionColor", (1, 1, 1))),
         "coat": attr(node, "coat", 0), "coat_roughness": attr(node, "coatRoughness", .1),

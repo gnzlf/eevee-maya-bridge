@@ -4,6 +4,14 @@
 
 Este informe describe el estado del código y las verificaciones disponibles. Distingue funciones implementadas, compatibilidad parcial y propuestas pendientes. Las metas de rendimiento son objetivos de desarrollo, no resultados ya alcanzados.
 
+### Reflejos Blinn y ventana de ajustes — 1 de noviembre de 2026
+
+**Blinn como Viewport 2.0.** Bajo una SkyDome blanca uniforme, Viewport 2.0 refleja el entorno en Blinn con `specularColor × specularRollOff`, igual en todos los ángulos (0,35 con los valores por defecto). La traducción anterior lo convertía en un dieléctrico de ~2 %. Ahora el Blinn usa Principled sin especular más un lóbulo Glossy sin Fresnel de ese color, con rugosidad `sqrt(eccentricity)`. En `Chip_Rigging_master:chips_geo` el brillo medido en un chip pasó de 66 a 104 (Viewport 2.0: 120). `standardSurface` no cambia: Viewport 2.0 también lo trata como físico (IOR 1.5 → 4 %, IOR 2.1 → 12,5 %), igual que Eevee.
+
+**Ojos.** El gris de la pupila en Viewport 2.0 (~150–175 sobre 255) no es un reflejo: Viewport 2.0 no muestra el `layeredTexture` del iris y pinta un gris plano. Con IOR 1.52 y la SkyDome a 0,365, el reflejo del HDRI es de ~4 % tanto en Viewport 2.0 como en Eevee. Eevee muestra el iris del material. Pruebas: `probe_ibl_calibration_gui.py`, `probe_reflection_compare_gui.py` y `probe_world_reflection_blender.py`.
+
+**Ventana de ajustes.** Las pestañas ocupan toda la ventana mediante `formLayout`, y cada página tiene un único scroll. Hay cinco pestañas (Vista, Luces, Entorno HDRI, Cámara, Rendimiento) con secciones planas, etiquetas alineadas y botones que se reparten el ancho. Las opciones secundarias se agrupan en "Más opciones" plegable. Antes, el `tabLayout` dentro de un `columnLayout` no se estiraba y cada pestaña quedaba en un recuadro con scroll propio.
+
 ### Optimización de interacción — 1 de noviembre de 2026
 
 **Validación en Maya 2024** (`SQ01-SH01_3D Layout_v0004.mb`, perfil propio, panel 1280 × 720, `tests/distribution/probe_interaction_optimization_gui.py`; resultados en `diagnostics/interaction-opt-20261101-192658/` y `diagnostics/interaction_optimization_vs_controlled.json`). Con la misma entrada que `camera_navigation_controlled.json` (translateX cada 16 ms), la navegación pasó de 13,2 a 36,5 imágenes nuevas por segundo; la latencia mediana bajó de 88 a 27 ms y la p95, de 110 a 49 ms. El color del worker bajó de 60,9 a 11,1 ms con 1 muestra frente a 8. La órbita dio 48 FPS y 22 ms, y mover una luz, 41 FPS y 21 ms. En reposo no hubo envíos durante 2 s, y tras cada fase se recuperaron 1920 px y 8 muestras. La referencia es 0.6.8 y viene de otra sesión. La reproducción del rig sigue limitada por Maya: sin Eevee, Viewport 2.0 reproduce a 5,0 fps (163 ms por fotograma); con Eevee, a 4,3 fps, y la imagen va unos 360 ms por detrás. No se registraron `maya_error.txt` ni errores en `blender.log`.
