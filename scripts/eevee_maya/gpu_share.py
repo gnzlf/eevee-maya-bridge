@@ -25,6 +25,39 @@ def library():
     return _dll
 
 
+IDENTITY_UV = (1.0, 1.0, 0.0, 0.0)
+
+
+def presentation_uv(frame_camera, current_projection):
+    """UV scale/offset placing a rendered frame correctly in the current viewport.
+
+    Resizing a panel (space to maximize, layout changes) changes its projection
+    before Eevee has rendered the new size. Mapping through both projections
+    shows the previous frame with its true proportions instead of stretching
+    it to the new panel; uncovered areas fall outside [0, 1].
+    Projections are VP2 row-major lists (row vectors, OpenGL clip space).
+    """
+    frame = ((frame_camera or {}).get('viewport') or {}).get('projection')
+    if not frame or not current_projection or len(frame) != 16 or len(current_projection) != 16:
+        return IDENTITY_UV
+    def terms(p):
+        perspective = abs(p[11]) > 1e-9
+        # ndc = scale * u + c, u being the view-space ray (perspective) or position (ortho).
+        return perspective, (p[0], p[5]), ((-p[8], -p[9]) if perspective else (p[12], p[13]))
+    kind_f, scale_f, c_f = terms(frame)
+    kind_c, scale_c, c_c = terms(current_projection)
+    if kind_f != kind_c or not all(scale_c) or not all(scale_f):
+        return IDENTITY_UV
+    result = []
+    for axis in range(2):
+        s = scale_f[axis] / scale_c[axis]
+        result.append((s, .5 * (1 - s) + .5 * (c_f[axis] - s * c_c[axis])))
+    (sx, ox), (sy, oy) = result
+    if max(abs(sx - 1), abs(sy - 1), abs(ox), abs(oy)) < 1e-5:
+        return IDENTITY_UV
+    return (sx, sy, ox, oy)
+
+
 class GpuShare:
     @staticmethod
     def current_context():
@@ -43,10 +76,10 @@ class GpuShare:
         if not self.dll.eb_publish(self.pointer, channel):
             raise RuntimeError(self.dll.eb_error().decode("utf-8", "replace"))
 
-    def draw(self, frame):
+    def draw(self, frame, current_projection=None):
         effects, cam = frame.get("effects", {}), frame.get("camera", {})
         native=frame.get("native") or {}
-        values = (ctypes.c_float * 19)(
+        values = (ctypes.c_float * 23)(
             bool(effects.get("bloom")), effects.get("bloom_threshold", .8),
             effects.get("bloom_strength", .5), bool(cam.get("dof") and not cam.get("orthographic")),
             cam.get("focus_distance", 10), cam.get("focal_length", 35) * .1,
@@ -54,7 +87,8 @@ class GpuShare:
             cam.get("near", .1), cam.get("far", 10000), max(.001,cam.get("focus_region_scale",1)),
             bool(native.get("ao")),native.get("ao_radius_pixels",16)/max(1,native.get("viewport_width",self.width)),
             max(0,native.get("ao_amount",1)),math.tan(cam.get("fov_x",.8)*.5),
-            bool(cam.get("orthographic")),cam.get("ortho_width",10),cam.get("shift_x",0),cam.get("shift_y",0))
+            bool(cam.get("orthographic")),cam.get("ortho_width",10),cam.get("shift_x",0),cam.get("shift_y",0),
+            *presentation_uv(cam, current_projection))
         if not self.dll.eb_draw(self.pointer, values):
             raise RuntimeError(self.dll.eb_error().decode("utf-8", "replace"))
 

@@ -4,6 +4,14 @@
 
 Este informe describe el estado del código y las verificaciones disponibles. Distingue funciones implementadas, compatibilidad parcial y propuestas pendientes. Las metas de rendimiento son objetivos de desarrollo, no resultados ya alcanzados.
 
+### Imagen estirada al agrandar el panel — 2 de noviembre de 2026
+
+**Antes.** Al maximizar un panel con la barra espaciadora o cambiar el layout, la vista seguía mostrando el último fotograma de Eevee hasta que llegaba el render nuevo. Ese fotograma se estiraba al tamaño nuevo del panel. Con escenas pesadas, Eevee tarda en renderizar el tamaño nuevo y la imagen deformada quedaba a la vista. En la prueba, una esfera pasaba de una proporción de 1.0 a 0.18.
+
+**Ahora.** El fotograma se presenta con su propia proyección (`presentation_uv` en `scripts/eevee_maya/gpu_share.py`). Se compara la proyección con la que se renderizó con la del panel actual y se calcula una escala y un desplazamiento de UV. Esa transformación se aplica en `native/gpu_bridge.cpp` y en `shaders/EeveeBlit.ogsfx`. El fotograma anterior se ve con sus proporciones reales, centrado como en la cámara. Las zonas del panel que no cubre quedan en gris oscuro hasta que llega el render del tamaño nuevo. Si las proyecciones coinciden, la transformación es la identidad. Contempla el desplazamiento de cámara y la vista ortográfica.
+
+**Verificado.** `tests/distribution/probe_viewport_resize_gui.py` pasa en Maya 2024 con el puente GPU y con la memoria compartida. La prueba congela Eevee y cambia el panel de 499×997 a 1999×697 y vuelta. La esfera del fotograma anterior mide 0.995 y 1.02, frente a 0.18 antes. Con el render nuevo mide 1.005 y 0.98. `tests/distribution/test_presentation_uv.py` comprueba la proyección de puntos en perspectiva, con desplazamiento y en ortográfica. La prueba de DOF con rim light da los mismos valores que antes.
+
 ### Profundidad de campo con rim light — 2 de noviembre de 2026
 
 **Antes.** La vista previa de DOF hacía 48 muestras fijas en espiral por píxel, sin tener en cuenta la profundidad. Las muestras fuera del cuadro repetían el borde de la imagen. Un rim light (borde fino y HDR muy brillante) quedaba como copias sueltas en arcos y rayas verticales: "se corta en trazos". En la prueba, la imagen desenfocada tenía 3 veces más energía de alta frecuencia que la nítida.

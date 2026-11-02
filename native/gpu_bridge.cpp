@@ -200,6 +200,7 @@ uniform float threshold, strength, focus, focal, fstop, sensor, nearClip, farCli
 uniform float aoRadius, aoAmount, tanHalfFov, orthoWidth;
 uniform vec2 cameraShift;
 uniform vec2 pixelSize;
+uniform vec2 uvScale, uvOffset;
 vec3 viewPosition(vec2 uv) {
     float d=texture(depthImage,uv).r;
     float z=isOrtho ? mix(nearClip,farClip,d) : nearClip*farClip/max(.00001,farClip-d*(farClip-nearClip));
@@ -292,18 +293,22 @@ vec3 depthOfField(vec2 uv, float d, vec3 center) {
     return sum/total;
 }
 void main() {
-    vec3 color = texture(colorImage, imageUV).rgb;
-    float d = texture(depthImage, imageUV).r;
-    if (dof) color = depthOfField(imageUV, d, color);
+    // The frame keeps its own projection while the panel is resized; parts of
+    // the new panel it does not cover stay empty until Eevee renders the size.
+    vec2 uv = imageUV * uvScale + uvOffset;
+    if (!inside(uv)) { outputColor = vec4(.06,.06,.06,1); gl_FragDepth = 1.0; return; }
+    vec3 color = texture(colorImage, uv).rgb;
+    float d = texture(depthImage, uv).r;
+    if (dof) color = depthOfField(uv, d, color);
     if (bloom) {
         vec3 halo=vec3(0); float total=0;
         for (int y=-3;y<=3;++y) for (int x=-3;x<=3;++x) {
             vec2 o=vec2(x,y); float w=exp(-dot(o,o)/4.0);
-            halo+=max(texture(colorImage,imageUV+o*pixelSize*4.0).rgb-vec3(threshold),vec3(0))*w; total+=w;
+            halo+=max(texture(colorImage,uv+o*pixelSize*4.0).rgb-vec3(threshold),vec3(0))*w; total+=w;
         }
         color+=halo*strength/total;
     }
-    if(ambientOcclusion)color*=occlusion(imageUV,d);
+    if(ambientOcclusion)color*=occlusion(uv,d);
     outputColor=vec4(color,1); gl_FragDepth=d;
 })GLSL";
 
@@ -362,7 +367,7 @@ API int eb_publish(void* ptr, int channel) {
     return complete && unlocked;
 }
 // values: bloom..focusScale (11), AO enabled/radius/amount, tanFov,
-// orthographic/width, camera shift X/Y (19 total).
+// orthographic/width, camera shift X/Y, presentation UV scale X/Y and offset X/Y (23 total).
 API int eb_draw(void* ptr, const float* values) {
     if(!ptr || !values) return 0;
     auto b=static_cast<Bridge*>(ptr);
@@ -405,6 +410,8 @@ API int eb_draw(void* ptr, const float* values) {
     uniform1f(uniformLocation(b->program,"orthoWidth"),values[16]);
     uniform2f(uniformLocation(b->program,"cameraShift"),values[17],values[18]);
     uniform2f(uniformLocation(b->program,"pixelSize"),1.f/b->width,1.f/b->height);
+    uniform2f(uniformLocation(b->program,"uvScale"),values[19],values[20]);
+    uniform2f(uniformLocation(b->program,"uvOffset"),values[21],values[22]);
     glDrawArrays(GL_TRIANGLES,0,3);
     return b->unlock(objects,2);
 }

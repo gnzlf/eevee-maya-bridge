@@ -16,6 +16,9 @@ uniform float cameraFstop = 5.6;
 uniform float sensorWidthCM = 3.6;
 uniform float nearClip = 0.1;
 uniform float farClip = 10000.0;
+// Places the frame with its own projection while the panel is being resized.
+uniform vec2 uvScale = {1.0, 1.0};
+uniform vec2 uvOffset = {0.0, 0.0};
 
 attribute VertexInput {
     vec3 position : POSITION;
@@ -30,7 +33,8 @@ attribute PixelOutput {
 GLSLShader BridgeVertex {
     void main() {
         gl_Position = vec4(position, 1.0);
-        imageUV = vec2(uv.x, flipVertical ? 1.0 - uv.y : uv.y);
+        vec2 placed = uv * uvScale + uvOffset;
+        imageUV = vec2(placed.x, flipVertical ? 1.0 - placed.y : placed.y);
     }
 }
 GLSLShader BridgePixel {
@@ -86,6 +90,12 @@ GLSLShader BridgePixel {
         return sum / total;
     }
     void main() {
+        if (!insideFrame(imageUV)) {
+            // Not covered by the previous frame until Eevee renders the new panel size.
+            outputColor = vec4(0.06, 0.06, 0.06, 1.0);
+            gl_FragDepth = 1.0;
+            return;
+        }
         outputColor = vec4(texture2D(bridgeSampler, imageUV).rgb, 1.0);
         if (previewDof && hasDepth) {
             outputColor.rgb = depthOfField(imageUV, texture2D(bridgeDepthSampler, imageUV).r, outputColor.rgb);

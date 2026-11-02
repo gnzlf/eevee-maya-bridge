@@ -106,7 +106,7 @@ class GPUImage(render.MUserRenderOperation):
                 self.receiver = self.receivers[key]
                 self.key = key
             started = time.perf_counter()
-            self.receiver.draw(frame)
+            self.receiver.draw(frame, list(context.getMatrix(render.MFrameContext.kProjectionMtx)))
             self.draw_ms = (time.perf_counter()-started)*1000
             if self.displayed_id != frame["id"]:
                 self.presentations.append((time.perf_counter(), frame["id"], frame.get("maya_frame")))
@@ -142,6 +142,7 @@ class ImageQuad(render.MQuadRender):
         self.depth_texture = None
         self.dimensions = None
         self.depth_state = None
+        self.frame_camera = None
 
     def shader(self):
         if self.effect is None:
@@ -186,6 +187,7 @@ class ImageQuad(render.MQuadRender):
             self.effect.setParameter("bloomStrength", float(effects.get("bloom_strength", 0.5)))
             self.effect.setParameter("pixelSize", (1.0 / width, 1.0 / height))
             camera = self.frame.get("camera", {})
+            self.frame_camera = camera
             self.effect.setParameter("previewDof", bool(camera.get("dof", False) and not camera.get("orthographic", False)))
             self.effect.setParameter("focusRegionScale",float(camera.get("focus_region_scale",1)))
             for name, value in (("focusDistance", camera.get("focus_distance", 10)),
@@ -196,6 +198,13 @@ class ImageQuad(render.MQuadRender):
                                 ("farClip", camera.get("far", 10000))):
                 self.effect.setParameter(name, float(value))
             self.frame = None
+        if self.frame_camera is not None:
+            from . import ui
+            from .gpu_share import presentation_uv
+            current = getattr(ui._controller, 'viewport_camera', None) if ui._controller is not None else None
+            sx, sy, ox, oy = presentation_uv(self.frame_camera, (current or {}).get('projection'))
+            self.effect.setParameter("uvScale", (sx, sy))
+            self.effect.setParameter("uvOffset", (ox, oy))
         if self.filepath:
             manager = render.MRenderer.getTextureManager()
             texture = manager.acquireTexture(str(self.filepath), "", 1)
